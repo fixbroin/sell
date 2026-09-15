@@ -726,19 +726,29 @@ export default function ProviderWithdrawalsPage() {
               ) : (                <>
                   <div className="hidden lg:block overflow-x-auto">
                     <Table>
-                      <TableHeader><TableRow><TableHead>Provider</TableHead><TableHead>Month Gross</TableHead><TableHead>Month Net</TableHead><TableHead>Wallet Balance</TableHead><TableHead>Lifetime Paid</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                      <TableHeader><TableRow><TableHead>Provider</TableHead><TableHead>Month Gross</TableHead><TableHead>Month Net (Online)</TableHead><TableHead>Cash Collected</TableHead><TableHead>Additional Charges</TableHead><TableHead>Withdrawable Balance</TableHead><TableHead>Lifetime Paid</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                       <TableBody>
                         {providers.map(p => {
                            const now = new Date();
                            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                           const stats = p.monthlyStats?.monthKey === monthKey ? p.monthlyStats : { gross: 0, commission: 0 };
-                           const monthNet = stats.gross - stats.commission;
+                           const stats = p.monthlyStats?.monthKey === monthKey ? p.monthlyStats : undefined;
+                           const onlineNet = stats?.onlineNet !== undefined 
+                             ? stats.onlineNet 
+                             : Math.max(0, (stats?.gross || 0) - (stats?.commission || 0) - (stats?.cashCollected || 0));
+                           const cashCollected = stats?.cashCollected || 0;
+                           const extraCharges = stats?.extraCharges !== undefined 
+                             ? stats.extraCharges 
+                             : 0;
 
                            return (
                            <TableRow key={p.uid}>
                               <TableCell><div className="font-medium">{p.displayName}</div><div className="text-xs text-muted-foreground">{p.email}</div></TableCell>
-                              <TableCell className="text-xs font-semibold">{formatCurrency(stats.gross, symbol, decimals, code)}</TableCell>
-                              <TableCell className="text-xs font-bold text-green-600">{formatCurrency(monthNet, symbol, decimals, code)}</TableCell>
+                              <TableCell className="text-xs font-semibold">{formatCurrency(stats?.gross || 0, symbol, decimals, code)}</TableCell>
+                              <TableCell className="text-xs font-bold text-green-600">{formatCurrency(onlineNet, symbol, decimals, code)}</TableCell>
+                              <TableCell className="text-xs font-semibold text-amber-600">{formatCurrency(cashCollected, symbol, decimals, code)}</TableCell>
+                              <TableCell className="text-xs font-semibold text-purple-600">
+                                {extraCharges > 0 ? `+${formatCurrency(extraCharges, symbol, decimals, code)}` : formatCurrency(0, symbol, decimals, code)}
+                              </TableCell>
                               <TableCell>
                                 <div className={cn("text-lg font-bold", (p.withdrawableBalance || 0) < 0 ? "text-destructive" : "text-blue-600")}>
                                     {formatCurrency(p.withdrawableBalance || 0, symbol, decimals, code)}
@@ -807,8 +817,14 @@ export default function ProviderWithdrawalsPage() {
                     {providers.map(p => {
                       const now = new Date();
                       const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                      const stats = p.monthlyStats?.monthKey === monthKey ? p.monthlyStats : { gross: 0, commission: 0 };
-                      const monthNet = stats.gross - stats.commission;
+                      const stats = p.monthlyStats?.monthKey === monthKey ? p.monthlyStats : undefined;
+                      const onlineNet = stats?.onlineNet !== undefined 
+                        ? stats.onlineNet 
+                        : Math.max(0, (stats?.gross || 0) - (stats?.commission || 0) - (stats?.cashCollected || 0));
+                      const cashCollected = stats?.cashCollected || 0;
+                      const extraCharges = stats?.extraCharges !== undefined 
+                        ? stats.extraCharges 
+                        : 0;
                       const balance = p.withdrawableBalance || 0;
 
                       return (
@@ -830,14 +846,24 @@ export default function ProviderWithdrawalsPage() {
                           <div className="grid grid-cols-2 gap-3 text-xs border-t pt-2">
                             <div className="text-left">
                               <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">Month Gross</span>
-                              <span className="font-semibold">{formatCurrency(stats.gross, symbol, decimals, code)}</span>
+                              <span className="font-semibold">{formatCurrency(stats?.gross || 0, symbol, decimals, code)}</span>
                             </div>
                             <div className="text-left">
-                              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">Month Net</span>
-                              <span className="font-bold text-green-600">{formatCurrency(monthNet, symbol, decimals, code)}</span>
+                              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">Month Net (Online)</span>
+                              <span className="font-bold text-green-600">{formatCurrency(onlineNet, symbol, decimals, code)}</span>
                             </div>
                             <div className="text-left">
-                              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">Wallet Balance</span>
+                              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">Cash Collected</span>
+                              <span className="font-semibold text-amber-600">{formatCurrency(cashCollected, symbol, decimals, code)}</span>
+                            </div>
+                            <div className="text-left">
+                              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">Additional Charges</span>
+                              <span className="font-semibold text-purple-600">
+                                {extraCharges > 0 ? `+${formatCurrency(extraCharges, symbol, decimals, code)}` : formatCurrency(0, symbol, decimals, code)}
+                              </span>
+                            </div>
+                            <div className="text-left">
+                              <span className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">Withdrawable Balance</span>
                               <span className={cn("font-extrabold text-sm", balance < 0 ? "text-destructive" : "text-blue-600")}>
                                 {formatCurrency(balance, symbol, decimals, code)}
                               </span>

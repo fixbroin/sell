@@ -20,7 +20,7 @@ import { collection, writeBatch, Timestamp, doc } from '@/lib/mysqlDb';
 
 const formSchema = z.object({
   serviceId: z.string({ required_error: "Please select a service." }),
-  numberOfReviews: z.coerce.number().int().min(1, "Must generate at least 1 review.").max(20, "Cannot generate more than 20 reviews at once."),
+  numberOfReviews: z.coerce.number().int().min(1, "Must generate at least 1 review.").max(30, "Cannot generate more than 30 reviews at once."),
 });
 
 type BulkReviewFormData = z.infer<typeof formSchema>;
@@ -213,9 +213,9 @@ export default function BulkReviewGeneratorDialog({
                 <FormItem>
                   <FormLabel>Number of Reviews to Generate</FormLabel>
                   <FormControl>
-                    <Input type="number" min="1" max="20" placeholder="e.g., 10" {...field} disabled={isGenerating} />
+                    <Input type="number" min="1" max="30" placeholder="e.g., 15" {...field} disabled={isGenerating} />
                   </FormControl>
-                  <FormDescription>Max 20 reviews per generation.</FormDescription>
+                  <FormDescription>Generate up to 30 unique, authentic reviews per batch.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

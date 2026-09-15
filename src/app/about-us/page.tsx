@@ -87,10 +87,10 @@ export default async function AboutUsPage() {
     },
     "sameAs": [
       "https://www.facebook.com/yourbrand.in",
-      "https://x.com/yourbrand",
-      "https://www.instagram.com/yourbrand/",
+      "https://x.com/yourbrand_in",
+      "https://www.instagram.com/yourbrand.in/",
       "https://www.linkedin.com/company/yourbrand-in",
-      "https://www.youtube.com/@yourbrand"
+      "https://www.youtube.com/@yourbrand-in"
     ]
   };
 

@@ -462,7 +462,7 @@ export default function ScheduleSelection({ onSelect, initialDate, initialSlot, 
 
   const formatDateForDisplay = (date: Date | undefined): string => {
     if (!date) return "";
-    return formatDateInTimezone(date, 'Asia/Kolkata');
+    return formatDateInTimezone(date, appConfig?.timezone || 'Asia/Kolkata');
   };
 
   if (isLoadingAppSettings) {

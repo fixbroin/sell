@@ -442,6 +442,121 @@ export default function ThankYouPage() {
         return;
       }
 
+      const urlBookingId = searchParams.get('bookingId');
+      const isRazorpayBooking = (searchParams.get('payment_method') === 'razorpay' || (isOnlinePayment && !!urlBookingId)) && !isProcessingCancellationFee;
+
+      if (isRazorpayBooking && urlBookingId) {
+        if (!razorpayPaymentId || !razorpayOrderId || !razorpaySignature) {
+            toast({ title: "Verification Failed", description: "Payment details are missing. Please contact support if you were charged.", variant: "destructive" });
+            router.push('/cart'); setIsLoadingPage(false); return;
+        }
+        try {
+            const verificationResponse = await fetch('/api/razorpay/verify-payment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ razorpay_payment_id: razorpayPaymentId, razorpay_order_id: razorpayOrderId, razorpay_signature: razorpaySignature }),
+            });
+            const verificationResult = await verificationResponse.json();
+            if (!verificationResult.success || verificationResult.status !== 'captured') {
+                throw new Error(verificationResult.error || "Payment verification failed. Please contact support.");
+            }
+            toast({ title: "Payment Verified", description: "Your payment has been successfully verified." });
+
+            const bookingRef = doc(db, 'bookings', urlBookingId);
+            const bookingSnap = await getDoc(bookingRef);
+
+            if (bookingSnap.exists()) {
+                const bookingData = bookingSnap.data() as FirestoreBooking;
+                let finalBookingNum = bookingData.bookingNumber;
+
+                if (bookingData.status === 'Pending Payment') {
+                    const nextBookingNumber = await assignNewBookingNumber();
+                    finalBookingNum = nextBookingNumber;
+
+                    await updateDoc(bookingRef, {
+                        status: 'Confirmed',
+                        bookingNumber: nextBookingNumber,
+                        paymentMethod: 'Online',
+                        razorpayPaymentId: razorpayPaymentId,
+                        razorpayOrderId: razorpayOrderId,
+                        razorpaySignature: razorpaySignature,
+                        updatedAt: Timestamp.now(),
+                    });
+
+                    const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+                    fetch(`${appUrl}/api/bookings/post-process`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bookingDocId: urlBookingId, triggerSource: 'razorpay_checkout_thankyou' })
+                    }).catch(err => console.error("Error triggering post-process from thank-you:", err));
+
+                    const servicesSummary = (bookingData.services || []).map(s => `${s.name} (x${s.quantity})`).join(', ');
+                    logUserActivity(
+                      'newBooking',
+                      {
+                        bookingId: bookingData.bookingId,
+                        bookingDocId: urlBookingId,
+                        totalAmount: bookingData.totalAmount,
+                        paymentMethod: 'Online',
+                        customerName: bookingData.customerName,
+                        customerPhone: bookingData.customerPhone,
+                        servicesSummary
+                      },
+                      currentUser?.uid,
+                      !currentUser ? getGuestId() : null,
+                      bookingData.customerName
+                    );
+
+                    if (currentUser?.uid) {
+                        const userNotification: Omit<FirestoreNotification, 'id'> = {
+                          userId: currentUser.uid,
+                          title: "Booking Confirmed!",
+                          message: `Your booking ${bookingData.bookingId} has been successfully placed. We'll assign a provider shortly.`,
+                          type: 'success',
+                          href: '/my-bookings',
+                          read: false,
+                          createdAt: Timestamp.now(),
+                        };
+                        await addDoc(collection(db, "userNotifications"), userNotification);
+                    }
+                }
+
+                const servicesSummary = (bookingData.services || []).map(s => `${s.name} (x${s.quantity})`).join(', ');
+                setBookingDetailsForDisplay({ 
+                    ...bookingData, 
+                    id: urlBookingId, 
+                    bookingNumber: finalBookingNum,
+                    servicesSummary, 
+                    createdAt: (() => {
+                        const millis = getTimestampMillis(bookingData.createdAt);
+                        if (!millis) return 'N/A';
+                        const d = new Date(millis);
+                        return `${formatDateInTimezone(d, appConfig?.timezone || 'Asia/Kolkata')} ${formatTimeInTimezone(d, appConfig?.timezone || 'Asia/Kolkata')}`;
+                    })(),
+                    scheduledDateDisplay: formatDateForDisplay(bookingData.scheduledDate, appConfig),
+                    latitude: bookingData.latitude === undefined ? null : bookingData.latitude, 
+                    longitude: bookingData.longitude === undefined ? null : bookingData.longitude, 
+                    visitingChargeDisplayed: bookingData.visitingCharge || 0, 
+                    discountCode: bookingData.discountCode || null, 
+                    discountAmount: bookingData.discountAmount || 0, 
+                });
+            } else {
+                throw new Error("Booking record not found.");
+            }
+
+        } catch (error: any) {
+            console.error("Error during Razorpay payment confirmation:", error);
+            toast({ title: "Payment Error", description: error.message, variant: "destructive", duration: 7000 });
+            router.push('/checkout/payment'); 
+            setIsLoadingPage(false); 
+            return;
+        } finally {
+            await clearLocalStorageItems(currentUser?.uid);
+            setIsLoadingPage(false);
+        }
+        return;
+      }
+
       if (isOnlinePayment) {
         if (!razorpayPaymentId || !razorpayOrderId || !razorpaySignature) {
             toast({ title: "Verification Failed", description: "Payment details are missing. Please contact support if you were charged.", variant: "destructive" });

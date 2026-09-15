@@ -5,7 +5,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
-import { cleanSeoString, truncateSeoString } from '@/lib/seoAdvancedUtils';
+import { cleanSeoString, truncateSeoString, stripBrandSuffix } from '@/lib/seoAdvancedUtils';
 
 const GenerateBlogContentInputSchema = z.object({
   title: z.string().describe("The title of the blog post to generate content for."),
@@ -16,14 +16,14 @@ export type GenerateBlogContentInput = z.infer<typeof GenerateBlogContentInputSc
 
 const GenerateBlogContentOutputSchema = z.object({
   content: z.string().describe(
-  "Complete Yourbrand SEO blog in HTML format. Minimum 1200-1800 words. Use h2, p, ul, li and br tags. Follow Yourbrand blog structure with large spacing between sections, homeowner-focused content, service benefits, common problems, service coverage, tips, pricing guidance, Yourbrand advantages, CTA, and related keywords."),
+  "Complete SEO blog in HTML format. Minimum 1000-1500 words. Use h2, p, ul, li and br tags. Follow blog structure with large spacing between sections, homeowner-focused content, service benefits, common problems, service coverage, tips, pricing guidance, advantages, CTA, and related keywords."),
   excerpt: z.string().describe("A short, catchy summary of the blog post (max 150 characters) to be used on the blog list card."),
   tags: z.string().describe(
   "Comma-separated string of 5-8 highly relevant SEO tags."),
   readingTime: z.string().describe("Estimated reading time, e.g., '5 min' or '8 min'."),
   h1_title: z.string().describe("An H1 title for the blog page."),
-  meta_title: z.string().describe("An SEO-optimized meta title, under 60 characters."),
-  meta_description: z.string().describe("An SEO-optimized meta description, under 160 characters."),
+  meta_title: z.string().describe("Meta title strictly 35-48 characters. NEVER include company name (template appends it)."),
+  meta_description: z.string().describe("Meta description under 155 characters."),
   meta_keywords: z.string().describe("A comma-separated string of SEO keywords."),
   imageHint: z.string()
   .max(50)
@@ -178,10 +178,10 @@ h1_title:
 SEO optimized and natural.
 
 meta_title:
-Maximum 60 characters.
+Strictly 35 to 48 characters. NEVER include company/brand name (template appends it).
 
 meta_description:
-Maximum 160 characters.
+Under 155 characters. Engaging summary with clear call to action.
 
 imageHint:
 Maximum 50 characters.
@@ -204,12 +204,13 @@ const generateBlogContentFlow = ai.defineFlow(
       throw new Error("AI failed to generate a valid blog post response.");
     }
 
-    // Clean SEO strings to ensure no redundant words
+    const cleanTitle = stripBrandSuffix(cleanSeoString(output.meta_title));
+
     return {
       ...output,
       h1_title: cleanSeoString(output.h1_title),
-      meta_title: truncateSeoString(cleanSeoString(output.meta_title), 60),
-      meta_description: truncateSeoString(cleanSeoString(output.meta_description), 160),
+      meta_title: truncateSeoString(cleanTitle, 48),
+      meta_description: truncateSeoString(cleanSeoString(output.meta_description), 155),
       excerpt: truncateSeoString(cleanSeoString(output.excerpt), 150),
     };
   }

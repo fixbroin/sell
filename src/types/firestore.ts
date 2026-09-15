@@ -308,6 +308,9 @@ export interface FirestoreUser {
     onlineNet: number;
     cashCommission: number;
     cashNet?: number;
+    onlineGross?: number;
+    onlineCommission?: number;
+    extraCharges?: number;
   };
   totalEarnings?: number; // Lifetime gross earnings
   totalCommissionPaid?: number; // Lifetime commission paid to admin
@@ -567,11 +570,13 @@ export interface DayAvailability {
 
 export interface LeaveRequest {
     id?: string;
-    startDate: string; // YYYY-MM-DD
-    endDate: string;   // YYYY-MM-DD
+    providerId?: string;       // Optional: Set for individual provider leave. Null/undefined for global platform holiday.
+    providerName?: string;     // Provider's full name for quick display in Admin
+    startDate: string;         // YYYY-MM-DD
+    endDate: string;           // YYYY-MM-DD
     leaveType: 'full_day' | 'partial_day';
-    startTime?: string; // HH:MM (if partial_day)
-    endTime?: string;   // HH:MM (if partial_day)
+    startTime?: string;        // HH:MM (if partial_day)
+    endTime?: string;          // HH:MM (if partial_day)
     reason: string;
     createdAt: any;
 }
@@ -1080,6 +1085,10 @@ export interface ChatSession {
   adminUnreadCount: number; // Messages sent by user that admin hasn't read
   participants: (string | null | undefined)[]; // Array containing UIDs of participants (e.g., [userId, adminId])
   aiAgentActive?: boolean; 
+  isUserTyping?: boolean;
+  isAdminTyping?: boolean;
+  userTypingAt?: Timestamp | number | null;
+  adminTypingAt?: Timestamp | number | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -1400,10 +1409,15 @@ export interface ProviderApplication {
   id?: string; // Firestore document ID (same as userId)
   userId: string; // Firebase Auth UID of the applicant
   status: ProviderApplicationStatus;
+  isOnline?: boolean; // Availability toggle (true = online/accepting bookings, false = offline)
 
   // Step 1: Client Category & Skills
   workCategoryId?: string;
   workCategoryName?: string; // Denormalized
+  additionalCategories?: { id: string; name: string }[];
+  allCategoryIds?: string[];
+  additionalServices?: { id: string; name: string; categoryName?: string }[];
+  additionalServiceIds?: string[];
   experienceLevelId?: string;
   experienceLevelLabel?: string; // Denormalized
   skillLevelId?: string;

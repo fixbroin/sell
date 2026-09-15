@@ -10,6 +10,7 @@ import { z } from 'genkit';
 import {
   cleanSeoString,
   truncateSeoString,
+  stripBrandSuffix,
 } from '@/lib/seoAdvancedUtils';
 
 const GenerateAreaCategorySeoInputSchema =
@@ -163,25 +164,27 @@ Examples:
 
 2. meta_title
 Rules:
-- Under 60 characters
-- Natural
-- Search optimized
+- Strictly 35 to 48 characters
+- NEVER include brand/company name (e.g. Yourbrand, Fixbro). The website template automatically appends it.
+- Format: "{{categoryName}} in {{areaName}} | Near Me" or "{{categoryName}} in {{areaName}}, {{cityName}}"
+- Natural, search optimized
 
 Examples:
-"Carpenter Near Me in Whitefield"
-"Electrician Services in HSR Layout"
+"Carpenter in Whitefield | Near Me"
+"Plumber in HSR Layout | Near Me"
 
 3. meta_description
 Rules:
-- Under 160 characters
+- Strictly under 155 characters
 - Mention:
-  - area name
-  - trusted experts
-  - category service
-  - near you intent
+  - "{{categoryName}} in {{areaName}}, {{cityName}} near you"
+  - trusted verified experts
+  - upfront pricing & same-day doorstep service
+  - call to action: "Book online now!"
+- NEVER include company name (template appends it).
 
 Example:
-"Book trusted carpenter services in Whitefield Bangalore with Yourbrand experts near you for repair and installation work."
+"Book trusted carpenter in Whitefield, Bangalore near you. Doorstep furniture repair, assembly & woodwork by verified experts. Book online now!"
 
 4. meta_keywords
 Rules:
@@ -212,16 +215,14 @@ Rules:
 
 - Mention:
   - nearby landmarks
-  - local Bangalore areas
+  - local areas
   - verified experts
   - same day service
   - affordable pricing
   - customer trust
 
 - Mention area name naturally multiple times.
-
 - Content must feel human written.
-
 - Avoid robotic repetition.
 
 6. faqs
@@ -229,12 +230,7 @@ Rules:
 - Generate 5 FAQs
 - Highly local SEO focused
 - Mention area name naturally
-- Mention nearby localities
 - Questions should match real Google searches
-
-Examples:
-"Do you provide carpenter services near Phoenix Marketcity Whitefield?"
-"Can I book electrician services in HSR Layout near me?"
 
 7. imageHint: Keywords for finding a relevant high-quality image.
 
@@ -265,16 +261,16 @@ const generateAreaCategorySeoFlow =
         );
       }
 
+      const cleanTitle = stripBrandSuffix(cleanSeoString(output.meta_title));
+
       return {
         h1_title: cleanSeoString(
           output.h1_title
         ),
 
         meta_title: truncateSeoString(
-          cleanSeoString(
-            output.meta_title
-          ),
-          60
+          cleanTitle,
+          48
         ),
 
         meta_description:
@@ -282,7 +278,7 @@ const generateAreaCategorySeoFlow =
             cleanSeoString(
               output.meta_description
             ),
-            160
+            155
           ),
 
         meta_keywords:

@@ -646,25 +646,28 @@ export default function ServiceDetailPageClient({
               )}
 {/* PLEASE NOTE - COLOR CODED (AMBER/WARNING) */}
 {service.fullDescription && (
-  <div className="p-4 sm:p-3 rounded-xl bg-amber-50 border border-amber-200">
+  <div className="p-4 sm:p-5 rounded-xl bg-amber-50 border border-amber-200">
     <h4 className="text-lg sm:text-xl font-headline font-bold text-amber-700 mb-4 flex items-center">
       <AlertCircle className="mr-2 h-5 w-5 sm:h-6 sm:w-6" />
       Please Note
     </h4>
 
-    <ul className="space-y-2">
+    <ul className="space-y-3">
       {service.fullDescription
         .split("\n")
         .filter((line) => line.trim() !== "")
-        .map((line, index) => (
-          <li
-            key={index}
-            className="flex items-start text-sm sm:text-base text-amber-900/80 font-medium"
-          >
-            <Info className="h-4 w-4 sm:h-5 sm:w-5 mr-3 text-amber-600 flex-shrink-0 mt-0.5" />
-            <span>{line}</span>
-          </li>
-        ))}
+        .map((line, index) => {
+          const cleanLine = line.replace(/^[\s•\-\*\d+\.\)]+/, "").trim();
+          return (
+            <li
+              key={index}
+              className="flex items-start text-sm sm:text-base text-amber-900/80 font-medium leading-relaxed"
+            >
+              <Info className="h-4 w-4 sm:h-5 sm:w-5 mr-3 text-amber-600 flex-shrink-0 mt-0.5" />
+              <span>{cleanLine || line.trim()}</span>
+            </li>
+          );
+        })}
     </ul>
   </div>
 )}

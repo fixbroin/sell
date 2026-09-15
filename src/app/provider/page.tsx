@@ -158,6 +158,24 @@ export default function ProviderDashboardPage() {
         throw new Error(result.message);
       }
 
+      // Optimistically update local bookings state immediately (0 seconds lag)
+      setBookings(prev => prev.map(b => {
+        if (b.id !== bookingId) return b;
+        const updated: FirestoreBooking = {
+          ...b,
+          status: newStatus,
+          updatedAt: Timestamp.now()
+        };
+        if (additionalCharges && additionalCharges.length > 0) {
+          updated.additionalCharges = additionalCharges;
+          updated.totalAmount = (b.totalAmount || 0) + additionalCharges.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+        }
+        if (finalizedPaymentMethod) {
+          updated.paymentMethod = finalizedPaymentMethod;
+        }
+        return updated;
+      }));
+
       // Log provider activity
       if (providerUser) {
         let eventType: UserActivityEventType = 'providerAcceptJob';
@@ -357,8 +375,9 @@ export default function ProviderDashboardPage() {
           isOpen={isCompleteDialogOpen}
           onClose={() => { setIsCompleteDialogOpen(false); setBookingToComplete(null); }}
           onConfirm={(charges, pMethod) => updateBookingStatus(bookingToComplete.id!, 'Completed', charges, pMethod)}
+          booking={bookingToComplete}
           originalAmount={bookingToComplete.totalAmount}
-          currentPaymentMethod={bookingToComplete.paymentMethod || "Cash"}
+          currentPaymentMethod={bookingToComplete.paymentMethod || "Pay After Service"}
           isProcessing={processingBookingAction === bookingToComplete.id}
         />
       )}

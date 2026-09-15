@@ -18,6 +18,7 @@ import { ref as storageRef, deleteObject } from '@/lib/mysqlStorage';
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import ProviderApplicationDetailsModal from '@/components/admin/ProviderApplicationDetailsModal';
 import { Textarea } from '@/components/ui/textarea'; 
@@ -52,6 +53,34 @@ export default function AdminProviderApplicationsPage() {
   const [adminReviewNotes, setAdminReviewNotes] = useState("");
   const [showNotesInputFor, setShowNotesInputFor] = useState<string | null>(null); 
   const [pendingStatusForNotes, setPendingStatusForNotes] = useState<ProviderApplicationStatus | null>(null);
+  const [isTogglingOnlineId, setIsTogglingOnlineId] = useState<string | null>(null);
+
+  const handleToggleOnline = async (app: ProviderApplication) => {
+    if (!app.id || isTogglingOnlineId) return;
+    setIsTogglingOnlineId(app.id);
+    const newStatus = app.isOnline === false ? true : false;
+    try {
+      const appDocRef = doc(db, PROVIDER_APPLICATION_COLLECTION, app.id);
+      await updateDoc(appDocRef, {
+        isOnline: newStatus,
+        updatedAt: Timestamp.now()
+      });
+      setApplications(prev => prev.map(item => item.id === app.id ? { ...item, isOnline: newStatus } : item));
+      toast({
+        title: newStatus ? "Provider Set to Online" : "Provider Set to Offline",
+        description: `"${app.fullName || 'Provider'}" is now ${newStatus ? 'Online (Accepting bookings)' : 'Offline (Paused)'}.`
+      });
+    } catch (e: any) {
+      console.error("Error toggling online status:", e);
+      toast({
+        title: "Error",
+        description: e.message || "Failed to update availability status.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTogglingOnlineId(null);
+    }
+  };
 
   const { config: appConfig, isLoading: isLoadingAppSettings } = useApplicationConfig();
 
@@ -272,10 +301,34 @@ export default function AdminProviderApplicationsPage() {
               <CardTitle className="text-base font-bold text-foreground break-words leading-tight">{app.fullName || "N/A"}</CardTitle>
               <CardDescription className="text-xs text-muted-foreground break-all">{app.email || "No Email"}</CardDescription>
             </div>
-            <div>
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge variant={getStatusBadgeVariant(app.status)} className={`text-xs capitalize whitespace-nowrap inline-block ${app.status === 'approved' ? 'bg-green-500 text-white' : ''}`}>
                 {app.status.replace(/_/g, ' ')}
               </Badge>
+              {app.status === 'approved' && (
+                <div
+                  onClick={() => handleToggleOnline(app)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-bold transition-all cursor-pointer select-none",
+                    app.isOnline !== false
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
+                      : "bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400"
+                  )}
+                  title={app.isOnline !== false ? "Provider is Online. Click switch to set Offline." : "Provider is Offline. Click switch to set Online."}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full", app.isOnline !== false ? "bg-emerald-500 animate-pulse" : "bg-zinc-400")} />
+                  <span>{app.isOnline !== false ? "Online" : "Offline"}</span>
+                  {isTogglingOnlineId === app.id ? (
+                    <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Switch
+                      checked={app.isOnline !== false}
+                      onCheckedChange={() => handleToggleOnline(app)}
+                      className="scale-[0.55] origin-center data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-zinc-300 dark:data-[state=unchecked]:bg-zinc-700 pointer-events-none -mr-1.5"
+                    />
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -481,7 +534,33 @@ export default function AdminProviderApplicationsPage() {
                         <TableCell className="text-sm">{app.workCategoryName || "N/A"}</TableCell>
                         <TableCell className="text-xs whitespace-nowrap">{formatApplicationTimestamp(app.submittedAt || app.createdAt, appConfig)}</TableCell>
                         <TableCell>
-                          <Badge variant={getStatusBadgeVariant(app.status)} className={`text-[10px] capitalize ${app.status === 'approved' ? 'bg-green-500 text-white' : ''}`}>{app.status.replace(/_/g, ' ')}</Badge>
+                          <div className="flex items-center gap-2 flex-wrap whitespace-nowrap">
+                            <Badge variant={getStatusBadgeVariant(app.status)} className={`text-[10px] capitalize shrink-0 ${app.status === 'approved' ? 'bg-green-500 text-white' : ''}`}>{app.status.replace(/_/g, ' ')}</Badge>
+                            {app.status === 'approved' && (
+                              <div
+                                onClick={() => handleToggleOnline(app)}
+                                className={cn(
+                                  "flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-bold transition-all cursor-pointer select-none",
+                                  app.isOnline !== false
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800"
+                                    : "bg-zinc-100 text-zinc-600 border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400"
+                                )}
+                                title={app.isOnline !== false ? "Provider is Online. Click switch to set Offline." : "Provider is Offline. Click switch to set Online."}
+                              >
+                                <span className={cn("h-1.5 w-1.5 rounded-full", app.isOnline !== false ? "bg-emerald-500 animate-pulse" : "bg-zinc-400")} />
+                                <span>{app.isOnline !== false ? "Online" : "Offline"}</span>
+                                {isTogglingOnlineId === app.id ? (
+                                  <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground" />
+                                ) : (
+                                  <Switch
+                                    checked={app.isOnline !== false}
+                                    onCheckedChange={() => handleToggleOnline(app)}
+                                    className="scale-[0.55] origin-center data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-zinc-300 dark:data-[state=unchecked]:bg-zinc-700 pointer-events-none -mr-1.5"
+                                  />
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex justify-end items-center gap-1.5">

@@ -91,8 +91,9 @@ export default function SkillLevelManager() {
       await triggerRefresh('global-cache');
       setLevels(currentLevels.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: "Skill level deleted." });
-    } catch (error) {
-      toast({ title: "Error", description: "Could not delete skill level.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error deleting skill level:", error);
+      toast({ title: "Error", description: error?.message || "Could not delete skill level.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -120,8 +121,9 @@ export default function SkillLevelManager() {
       setLevels(updatedLevels.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: `Skill level ${editingLevel ? 'updated' : 'added'}.` });
       setIsFormOpen(false);
-    } catch (error) {
-      toast({ title: "Error", description: `Could not save skill level.`, variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error saving skill level:", error);
+      toast({ title: "Error", description: error?.message || `Could not save skill level.`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

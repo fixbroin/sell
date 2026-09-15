@@ -21,9 +21,9 @@ function determinePushType(title: string): string {
     return 'chat_message';
   } else if (lowerTitle.includes('completed')) {
     return 'booking_completed';
-  } else if (lowerTitle.includes('confirmed') || lowerTitle.includes('received')) {
+  } else if (lowerTitle.includes('confirmed') || lowerTitle.includes('received') || lowerTitle.includes('booking placed')) {
     return 'booking_created';
-  } else if (lowerTitle.includes('assigned')) {
+  } else if (lowerTitle.includes('assigned') || lowerTitle.includes('technician')) {
     return 'provider_assigned';
   } else if (lowerTitle.includes('cancelled')) {
     return 'booking_cancelled';
@@ -35,6 +35,14 @@ function determinePushType(title: string): string {
     return 'new_inquiry';
   } else if (lowerTitle.includes('custom')) {
     return 'custom_request';
+  } else if (lowerTitle.includes('referral') || lowerTitle.includes('welcome reward')) {
+    return 'referral_reward_completed';
+  } else if (lowerTitle.includes('deposit') || lowerTitle.includes('top-up')) {
+    return 'provider_wallet_deposit';
+  } else if (lowerTitle.includes('refund') || lowerTitle.includes('adjusted')) {
+    return 'provider_wallet_refund';
+  } else if (lowerTitle.includes('dispute') || lowerTitle.includes('complaint')) {
+    return 'admin_wallet_complaint_alert';
   }
   return 'other';
 }
@@ -50,6 +58,27 @@ export async function POST(request: Request) {
     let finalTitle = title;
     let finalBody = body;
 
+    // Infer smart defaults so templates always have values even if caller didn't pass variables
+    const inferredSender = title.replace(/^(?:New )?(?:Chat )?Message from /i, '').trim();
+    const inferredCustomer = body.match(/From\s+([^(\n]+)/i)?.[1]?.trim() || '';
+    const inferredServiceName = body.match(/for:\s*([^\n]+)/i)?.[1]?.trim() || '';
+    const inferredBookingId = (body.match(/#?([A-Z0-9-]{4,15})/i)?.[1]) || '';
+
+    const smartVariables: Record<string, string> = {
+      title,
+      body,
+      siteName: process.env.NEXT_PUBLIC_APP_NAME || 'Yourbrand',
+      senderName: inferredSender || 'Support',
+      customerName: inferredCustomer || 'Customer',
+      name: inferredCustomer || inferredSender || 'Customer',
+      messageText: body,
+      message: body,
+      subject: title,
+      serviceName: inferredServiceName || 'Requested Service',
+      bookingId: inferredBookingId || '',
+      ...(variables || {})
+    };
+
     // Check if push notification category is enabled
     const pushType = customType || determinePushType(title);
     if (pushType !== 'other') {
@@ -61,15 +90,18 @@ export async function POST(request: Request) {
 
       // If database has override templates, replace placeholders
       if (template.subject && template.body) {
-        const mergedVariables = {
-          title,
-          body,
-          ...(variables || {})
-        };
-        finalTitle = replacePlaceholders(template.subject, mergedVariables);
-        finalBody = replacePlaceholders(template.body, mergedVariables);
+        const templatedTitle = replacePlaceholders(template.subject, smartVariables);
+        const templatedBody = replacePlaceholders(template.body, smartVariables);
+
+        // If template produced unreplaced placeholders (e.g. {unknownVar}), fall back to original title/body
+        finalTitle = (templatedTitle && !/\{[a-zA-Z0-9_]+\}/.test(templatedTitle)) ? templatedTitle : title;
+        finalBody = (templatedBody && !/\{[a-zA-Z0-9_]+\}/.test(templatedBody)) ? templatedBody : body;
       }
     }
+
+    // Safety clean: ensure NO leftover {placeholder} braces are ever sent to user screens
+    finalTitle = finalTitle.replace(/\{[a-zA-Z0-9_]+\}/g, '').trim() || title;
+    finalBody = finalBody.replace(/\{[a-zA-Z0-9_]+\}/g, '').trim() || body;
 
     // 1. Get user's FCM tokens from Firestore
     const userDoc = await adminDb.collection('users').doc(userId).get();

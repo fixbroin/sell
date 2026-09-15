@@ -59,7 +59,12 @@ const TABLES = [
   'indexingProgress',
   'promoCodeUsage',
   'providerWalletTransactions',
-  'providerComplaints'
+  'providerComplaints',
+  'providerControlOptions',
+  'adminCoupons',
+  'services',
+  'adminTaxes',
+  'adminCustomImages'
 ];
 
 /**
@@ -211,7 +216,7 @@ async function seedDemoDataForTable(conn: mysql.Pool | mysql.PoolConnection, tab
           websiteName: "Yourbrand",
           contactEmail: "support@yourdomain.com",
           contactMobile: "+1 123-456-7890",
-          address: "#44 Electronic City Phase 2, Bangalore - 560100",
+          address: "123 Main Street, City, Country - 123456",
           logoUrl: "/android-chrome-512x512.png",
           faviconUrl: "/favicon.ico",
           websiteIconUrl: "/android-chrome-512x512.png",
@@ -518,6 +523,7 @@ export async function getDocsInternal(conn: mysql.PoolConnection | mysql.Pool, p
   const orderByClauses: string[] = [];
   let limitClause = '';
   let offsetClause = '';
+  const limitParams: any[] = [];
 
   const parseConstraint = (c: any) => {
     if (!c) return;
@@ -648,6 +654,7 @@ export async function getDocsInternal(conn: mysql.PoolConnection | mysql.Pool, p
       if (field && !/^[a-zA-Z0-9_$.*\[\]\-]+$/.test(field)) {
         throw new Error(`Access denied: Unsafe order field name "${field}"`);
       }
+
       if (!['asc', 'desc'].includes(direction.toLowerCase())) {
         throw new Error(`Access denied: Invalid sorting direction "${direction}"`);
       }
@@ -661,10 +668,10 @@ export async function getDocsInternal(conn: mysql.PoolConnection | mysql.Pool, p
       }
     } else if (c.type === 'limit') {
       limitClause = ` LIMIT ?`;
-      params.push(c.value);
+      limitParams.push(Number(c.value));
     } else if (c.type === 'offset') {
       offsetClause = ` OFFSET ?`;
-      params.push(c.value);
+      limitParams.push(Number(c.value));
     } else if (c.type === 'and') {
       if (Array.isArray(c.conditions)) {
         c.conditions.forEach(parseConstraint);
@@ -737,6 +744,10 @@ export async function getDocsInternal(conn: mysql.PoolConnection | mysql.Pool, p
     sql += ` LIMIT 18446744073709551615${offsetClause}`;
   }
 
+  if (limitParams.length > 0) {
+    params.push(...limitParams);
+  }
+
   let rows: any = [];
   try {
     const [result]: any = await conn.query(sql, params);
@@ -794,7 +805,7 @@ function resolveFieldValues(target: any, source: any): any {
   }
 
   if (Array.isArray(source)) {
-    return source.map((item, idx) => resolveFieldValues(Array.isArray(target) ? target[idx] : undefined, item));
+    return source.map((item) => resolveFieldValues(undefined, item));
   }
 
   if (typeof source === 'object' && !isTimestamp(source)) {

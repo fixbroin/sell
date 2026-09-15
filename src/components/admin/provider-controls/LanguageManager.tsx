@@ -89,8 +89,9 @@ export default function LanguageManager() {
       await triggerRefresh('global-cache');
       setOptions(currentOptions.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: "Language option deleted." });
-    } catch (error) {
-      toast({ title: "Error", description: "Could not delete language option.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error deleting language option:", error);
+      toast({ title: "Error", description: error?.message || "Could not delete language option.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -118,8 +119,9 @@ export default function LanguageManager() {
       setOptions(updatedOptionsArray.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: `Language option ${editingOption ? 'updated' : 'added'}.` });
       setIsFormOpen(false);
-    } catch (error) {
-      toast({ title: "Error", description: `Could not save language option.`, variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error saving language option:", error);
+      toast({ title: "Error", description: error?.message || `Could not save language option.`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

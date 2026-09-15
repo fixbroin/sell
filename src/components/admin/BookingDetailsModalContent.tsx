@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { MapPin, ExternalLink, Tag, HandCoins, Plus, UserCheck, Loader2, Phone, UserCircle, Clock, AlertTriangle, Wallet, Ban } from 'lucide-react'; 
 import AppImage from '@/components/ui/AppImage'; 
-import { getTimestampMillis, formatScheduledDate, formatCurrency, formatDateInTimezone, formatTimeInTimezone } from '@/lib/utils';
+import { getTimestampMillis, formatScheduledDate, formatCurrency, formatDateInTimezone, formatTimeInTimezone, isCashPayment } from '@/lib/utils';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, updateDoc, Timestamp } from '@/lib/mysqlDb';
@@ -251,13 +251,13 @@ export default function BookingDetailsModalContent({ booking }: BookingDetailsMo
                 <Badge variant="outline" className={
                     booking.status === 'Completed' 
                     ? "bg-green-50 text-green-700 border-green-200"
-                    : (booking.paymentMethod || 'Cash').toLowerCase().includes('after') || (booking.paymentMethod || 'Cash').toLowerCase().includes('cash')
+                    : isCashPayment(booking.paymentMethod)
                         ? "bg-red-50 text-red-700 border-red-200"
                         : "bg-green-50 text-green-700 border-green-200"
                 }>
                     {booking.status === 'Completed' 
-                        ? ((booking.paymentMethod || 'Cash').toLowerCase().includes('after') || (booking.paymentMethod || 'Cash').toLowerCase().includes('cash') ? "Service After Paid" : `Paid (${booking.paymentMethod})`)
-                        : (booking.paymentMethod || "Cash")
+                        ? (isCashPayment(booking.paymentMethod) ? "Paid (Pay After Service)" : `Paid (Online)`)
+                        : (isCashPayment(booking.paymentMethod) ? "Pay After Service" : "Online")
                     }
                 </Badge>
             </div>

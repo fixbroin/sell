@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { AppSettings, FirestoreService, FirestoreSubCategory, TimeSlotCategoryLimit, FirestoreBooking, LeaveRequest } from '@/types/firestore';
 import { defaultAppSettings } from '@/config/appDefaults';
-import { getZonedDate, formatZonedDateToISO, convertWallClockToUTC } from '@/lib/utils';
+import { getZonedDate, formatZonedDateToISO, convertWallClockToUTC, getTimestampMillis } from '@/lib/utils';
 import { getHaversineDistance } from '@/lib/locationUtils';
 
 export const dynamic = 'force-dynamic';
@@ -120,7 +120,7 @@ function getDayActiveIntervals(
     }];
   }
   
-  const activeLeaves = leaves.filter(leave => leave.startDate <= dateISO && leave.endDate >= dateISO);
+  const activeLeaves = leaves.filter(leave => !leave.providerId && leave.startDate <= dateISO && leave.endDate >= dateISO);
   for (const leave of activeLeaves) {
     if (leave.leaveType === 'full_day') {
       return [];
@@ -502,20 +502,27 @@ export async function POST(req: NextRequest) {
         const limitLateBookingHours = enableLimitLateBookings ? (appConfig.limitLateBookingHours ?? DEFAULT_HOURS_WHEN_LIMIT_ENABLED) : 0;
 
         const uniqueCartCategoryIds = new Set<string>();
+        const cartItemsDetails: { serviceId: string; categoryId?: string }[] = [];
         let totalCartDuration = 0;
         cartEntries.forEach((entry: CartEntry) => {
             const service = servicesData[entry.serviceId];
             if (service) {
                 totalCartDuration += getServiceDurationInMinutes(service) * entry.quantity;
                 const subCat = subCatsData[service.subCategoryId];
-                if (subCat?.parentId) uniqueCartCategoryIds.add(subCat.parentId);
+                const catId = subCat?.parentId;
+                if (catId) uniqueCartCategoryIds.add(catId);
+                cartItemsDetails.push({ serviceId: entry.serviceId, categoryId: catId });
             }
         });
         const cartCategoryIds = Array.from(uniqueCartCategoryIds);
+        const cartServiceIds = cartEntries.map((e: CartEntry) => e.serviceId);
 
         // --- Cache Logic Start ---
         const bookingsHash = bookingsSnap.docs
-            .map(doc => `${doc.id}_${doc.updateTime?.toMillis() || 0}`)
+            .map(doc => {
+                const updateMs = doc.updateTime ? getTimestampMillis(doc.updateTime) : (doc.data()?.updatedAt ? getTimestampMillis(doc.data().updatedAt) : 0);
+                return `${doc.id}_${updateMs}`;
+            })
             .sort()
             .join('|');
             
@@ -524,7 +531,8 @@ export async function POST(req: NextRequest) {
             .sort()
             .join('|');
             
-        const cacheKey = `${lookBackISO}_${dateISO}_${bookingsHash}_${limitsHash}_${appConfig.updatedAt?.toMillis() || 0}_${breakTimeMinutes}_${latitude || 0}_${longitude || 0}`;
+        const configUpdatedMs = getTimestampMillis(appConfig?.updatedAt);
+        const cacheKey = `${lookBackISO}_${dateISO}_${bookingsHash}_${limitsHash}_${configUpdatedMs}_${breakTimeMinutes}_${latitude || 0}_${longitude || 0}`;
         
         let cacheData: {
             globalBusyMap: Map<string, Record<string, number>>;
@@ -603,11 +611,11 @@ export async function POST(req: NextRequest) {
         const { globalBusyMap, providerBusyMap, adminBusyMap } = cacheData;
         // --- Cache Logic End ---
 
-        // Check if selected date is fully blocked by a leave
-        const selectedDateActiveLeaves = leavesData.filter(l => l.startDate <= dateISO && l.endDate >= dateISO);
-        const hasFullDayLeave = selectedDateActiveLeaves.some(l => l.leaveType === 'full_day');
+        // Check if selected date is fully blocked by a GLOBAL platform leave/holiday
+        const selectedDateGlobalLeaves = leavesData.filter(l => !l.providerId && l.startDate <= dateISO && l.endDate >= dateISO);
+        const hasFullDayLeave = selectedDateGlobalLeaves.some(l => l.leaveType === 'full_day');
         if (hasFullDayLeave) {
-            const leaveReason = selectedDateActiveLeaves.find(l => l.leaveType === 'full_day')?.reason || "Provider Leave / Holiday";
+            const leaveReason = selectedDateGlobalLeaves.find(l => l.leaveType === 'full_day')?.reason || "Platform Holiday";
             return NextResponse.json({ isLeave: true, leaveReason, availableTimeSlots: [], totalCartDuration });
         }
 
@@ -618,35 +626,59 @@ export async function POST(req: NextRequest) {
         const now = getZonedDate(new Date(), timezone);
         const earliestBookableTime = new Date(now.getTime() + (limitLateBookingHours * 60 * 60 * 1000));
 
-        // Fetch local approved providers for the required category IDs that cover the customer's coordinates
-        const localProvidersMap = new Map<string, any[]>();
-        for (const catId of cartCategoryIds) {
-            let providersList: any[] = [];
-            if (latitude !== undefined && longitude !== undefined) {
-                try {
-                    const providersSnapshot = await adminDb.collection('providerApplications')
-                        .where('status', '==', 'approved')
-                        .where('workCategoryId', '==', catId)
-                        .get();
-                    
-                    providersList = providersSnapshot.docs.map(doc => {
-                        const pData = doc.data() as any;
-                        let distance = Infinity;
-                        if (pData.workAreaCenter && pData.workAreaRadiusKm) {
-                            distance = getHaversineDistance(
-                                Number(latitude),
-                                Number(longitude),
-                                Number(pData.workAreaCenter.latitude),
-                                Number(pData.workAreaCenter.longitude)
-                            );
-                        }
-                        return { id: doc.id, ...pData, distance };
-                    }).filter(p => p.distance <= (p.workAreaRadiusKm || 0));
-                } catch (err) {
-                    console.error(`Error loading providers for category ${catId}:`, err);
-                }
+        // Fetch local approved providers that can fulfill ALL items in the customer's cart
+        let eligibleLocalProviders: any[] = [];
+        if (latitude !== undefined && longitude !== undefined) {
+            try {
+                const providersSnapshot = await adminDb.collection('providerApplications')
+                    .where('status', '==', 'approved')
+                    .get();
+
+                eligibleLocalProviders = providersSnapshot.docs.map((doc: any) => {
+                    const pData = doc.data() as any;
+                    let distance = Infinity;
+                    if (pData.workAreaCenter && pData.workAreaRadiusKm) {
+                        distance = getHaversineDistance(
+                            Number(latitude),
+                            Number(longitude),
+                            Number(pData.workAreaCenter.latitude),
+                            Number(pData.workAreaCenter.longitude)
+                        );
+                    }
+                    return { id: doc.id, ...pData, distance };
+                }).filter(p => {
+                    // Availability check: Provider must be online
+                    if (p.isOnline === false) return false;
+
+                    // Check if this provider has an active FULL DAY leave on the requested date
+                    const providerOnFullDayLeave = leavesData.find(l => 
+                        l.providerId === p.id && 
+                        l.startDate <= dateISO && 
+                        l.endDate >= dateISO && 
+                        l.leaveType === 'full_day'
+                    );
+                    if (providerOnFullDayLeave) {
+                        return false; // Provider is taking this full day off
+                    }
+
+                    // Distance radius check
+                    if (p.distance > (p.workAreaRadiusKm || 0)) return false;
+
+                    // Full cart validation: Provider must support EVERY service in the cart
+                    const canFulfillWholeCart = cartItemsDetails.length > 0 && cartItemsDetails.every(item => {
+                        const hasCategory = item.categoryId && (
+                            p.workCategoryId === item.categoryId || 
+                            (Array.isArray(p.allCategoryIds) && p.allCategoryIds.includes(item.categoryId))
+                        );
+                        const hasSpecificService = (Array.isArray(p.additionalServiceIds) && p.additionalServiceIds.includes(item.serviceId)) ||
+                                                  (Array.isArray(p.additionalServices) && p.additionalServices.some((s: any) => s.id === item.serviceId));
+                        return hasCategory || hasSpecificService;
+                    });
+                    return canFulfillWholeCart;
+                });
+            } catch (err) {
+                console.error("Error loading eligible local providers for cart:", err);
             }
-            localProvidersMap.set(catId, providersList);
         }
 
         const availableSlots: { slot: string; remainingCapacity: number, endDateTime: string }[] = [];
@@ -708,6 +740,21 @@ export async function POST(req: NextRequest) {
                     if (busySet) {
                         busySet.forEach(id => busyProviderIds.add(id));
                     }
+
+                    // Also mark provider as busy if they have a leave (full or partial) covering this specific step
+                    leavesData.forEach(l => {
+                        if (l.providerId && l.startDate <= step.dateISO && l.endDate >= step.dateISO) {
+                            if (l.leaveType === 'full_day') {
+                                busyProviderIds.add(l.providerId);
+                            } else if (l.leaveType === 'partial_day') {
+                                const leaveStart = parseTimeToMinutes(l.startTime || "09:00");
+                                const leaveEnd = parseTimeToMinutes(l.endTime || "17:00");
+                                if (step.minutes >= leaveStart && step.minutes < leaveEnd) {
+                                    busyProviderIds.add(l.providerId);
+                                }
+                            }
+                        }
+                    });
                 }
                 
                 for (const step of pathSteps) {
@@ -723,9 +770,8 @@ export async function POST(req: NextRequest) {
 
                         const remainingAdminCapacity = Math.max(0, adminLimit - adminBookings);
                         
-                        // Count available local providers
-                        const localProviders = localProvidersMap.get(catId) || [];
-                        const availableProviders = localProviders.filter(p => !busyProviderIds.has(p.id)).length;
+                        // Count available local providers capable of the entire cart
+                        const availableProviders = eligibleLocalProviders.filter(p => !busyProviderIds.has(p.id)).length;
 
                         // Dynamic Remaining Capacity
                         const remaining = remainingAdminCapacity + availableProviders;

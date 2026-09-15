@@ -346,10 +346,10 @@ const calculateProviderFee = (bookingAmount: number, feeType?: string, feeValue?
   return 0;
 };
 
-// Check if payment method is cash
+// Check if payment method is Pay After Service (FixBro has only two payment methods: "Online" and "Pay After Service")
 const isCashPayment = (method?: string): boolean => {
-  const m = (method || '').toLowerCase();
-  return m === 'pay after service';
+  if (!method) return true;
+  return method.toLowerCase().trim() !== 'online';
 };
 
 // 6. Central server action to handle provider status updates with wallet validation (MySQL)
@@ -384,7 +384,7 @@ export async function updateBookingStatusByProviderAction(
 
     // 1. Acceptance Checks & Wallet Deductions
     if (newStatus === 'ProviderAccepted') {
-      const paymentMethod = finalizedPaymentMethod || bookingData.paymentMethod || 'Cash';
+      const paymentMethod = finalizedPaymentMethod || bookingData.paymentMethod || 'Pay After Service';
       
       if (isCashPayment(paymentMethod)) {
         // Load settings and config
@@ -419,7 +419,7 @@ export async function updateBookingStatusByProviderAction(
             amount: -totalDeduction,
             type: 'commission_deduction',
             bookingId,
-            description: `Commission (${symbol}${commission.toFixed(decimals)}) + Platform Fee (${symbol}${platformFeeVal.toFixed(decimals)}) + Tax Fee (${symbol}${taxFeeVal.toFixed(decimals)}) auto-deducted for Cash Booking #${bookingData.bookingId}`,
+            description: `Commission (${symbol}${commission.toFixed(decimals)}) + Platform Fee (${symbol}${platformFeeVal.toFixed(decimals)}) + Tax Fee (${symbol}${taxFeeVal.toFixed(decimals)}) auto-deducted for Pay After Service Booking #${bookingData.bookingId}`,
             timestamp: Timestamp.now(),
           });
 

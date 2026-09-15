@@ -139,7 +139,14 @@ export default function ReviewSubmissionModal({ booking, isOpen, onReviewSubmitt
                 userId: adminUid,
                 title: adminNotification.title,
                 body: adminNotification.message,
-                href: adminNotification.href
+                href: adminNotification.href,
+                variables: {
+                    customerName: user.displayName || 'Customer',
+                    serviceName: serviceToReview.name,
+                    rating: data.rating,
+                    comment: data.comment || '',
+                    siteName: 'Yourbrand'
+                }
             });
 
             // Send Email Notification

@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Loader2, UserCheck2, UserCircle, PackageSearch, MapPin } from "lucide-react";
-import type { ProviderApplication, FirestoreBooking, FirestoreService, FirestoreSubCategory } from '@/types/firestore';
+import { Loader2, UserCheck2, UserCircle, PackageSearch, MapPin, CalendarOff } from "lucide-react";
+import type { ProviderApplication, FirestoreBooking, FirestoreService, FirestoreSubCategory, LeaveRequest } from '@/types/firestore';
 import { db } from '@/lib/firebase';
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from '@/lib/mysqlDb';
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +24,7 @@ interface AssignProviderModalProps {
 
 export default function AssignProviderModal({ isOpen, onClose, booking, onAssignConfirm }: AssignProviderModalProps) {
   const [providers, setProviders] = useState<ProviderApplication[]>([]);
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string | undefined>(undefined);
   const [isLoadingProviders, setIsLoadingProviders] = useState(true);
   const [isAssigning, setIsAssigning] = useState(false);
@@ -68,6 +69,12 @@ export default function AssignProviderModal({ isOpen, onClose, booking, onAssign
         const snapshot = await getDocs(q);
         const approvedProviders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProviderApplication));
         setProviders(approvedProviders);
+
+        // 3. Fetch leaves
+        const leavesRef = collection(db, "leaves");
+        const leavesSnap = await getDocs(leavesRef);
+        const fetchedLeaves = leavesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LeaveRequest));
+        setLeaves(fetchedLeaves);
       } catch (error) {
         console.error("Error fetching providers:", error);
         toast({ title: "Error", description: "Could not load relevant providers.", variant: "destructive" });
@@ -90,29 +97,48 @@ export default function AssignProviderModal({ isOpen, onClose, booking, onAssign
           p.workAreaCenter.longitude
         );
       }
-      return { ...p, distance };
+      const activeLeave = leaves.find(l => {
+        if (l.providerId !== p.id) return false;
+        if (!booking.scheduledDate) return false;
+        return l.startDate <= booking.scheduledDate && l.endDate >= booking.scheduledDate;
+      });
+      return { 
+        ...p, 
+        distance,
+        isOnLeave: !!activeLeave,
+        activeLeave
+      };
     });
-  }, [providers, booking]);
+  }, [providers, booking, leaves]);
 
   const { matchingProviders, otherProviders } = useMemo(() => {
     const matching: typeof providersWithDistance = [];
     const other: typeof providersWithDistance = [];
 
     providersWithDistance.forEach(p => {
-      if (bookingCategoryId && p.workCategoryId === bookingCategoryId) {
+      const hasCategory = (bookingCategoryId && p.workCategoryId === bookingCategoryId) || 
+                          (bookingCategoryId && p.allCategoryIds?.includes(bookingCategoryId));
+      const hasAllServices = booking.services && booking.services.length > 0 && booking.services.every(s => {
+        const canDoByCat = hasCategory;
+        const canDoByService = Array.isArray(p.additionalServiceIds) && p.additionalServiceIds.includes(s.serviceId);
+        return canDoByCat || canDoByService;
+      });
+
+      if (hasCategory || hasAllServices) {
         matching.push(p);
       } else {
         other.push(p);
       }
     });
 
-    matching.sort((a, b) => a.distance - b.distance);
-    other.sort((a, b) => a.distance - b.distance);
+    matching.sort((a, b) => (Number(a.isOnLeave) - Number(b.isOnLeave)) || (Number(b.isOnline !== false) - Number(a.isOnline !== false)) || (a.distance - b.distance));
+    other.sort((a, b) => (Number(a.isOnLeave) - Number(b.isOnLeave)) || (Number(b.isOnline !== false) - Number(a.isOnline !== false)) || (a.distance - b.distance));
 
     return { matchingProviders: matching, otherProviders: other };
   }, [providersWithDistance, bookingCategoryId]);
 
   const renderProviderItem = (provider: typeof providersWithDistance[0]) => {
+    const isOnline = provider.isOnline !== false;
     return (
       <Label
         key={provider.id}
@@ -132,7 +158,23 @@ export default function AssignProviderModal({ isOpen, onClose, booking, onAssign
         <div className="flex-grow min-w-0 space-y-0.5">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-baseline gap-1 sm:gap-2">
             <div className="flex flex-col min-w-0">
-              <p className="font-bold text-sm truncate">{provider.fullName}</p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <p className="font-bold text-sm truncate">{provider.fullName}</p>
+                <span className={cn(
+                  "text-[9px] font-bold px-1.5 py-0.5 rounded-full border leading-none",
+                  isOnline 
+                    ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400" 
+                    : "bg-muted text-muted-foreground border-border"
+                )}>
+                  {isOnline ? "Online" : "Offline"}
+                </span>
+                {provider.isOnLeave && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border leading-none bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 flex items-center gap-1">
+                    <CalendarOff className="h-2.5 w-2.5" />
+                    On Leave {provider.activeLeave?.leaveType === 'full_day' ? '(Full Day)' : `(${provider.activeLeave?.startTime}-${provider.activeLeave?.endTime})`}
+                  </span>
+                )}
+              </div>
               {booking.suggestedProviderIds?.includes(provider.id!) && (
                 <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Suggested Match</span>
               )}

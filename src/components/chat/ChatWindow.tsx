@@ -13,6 +13,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
 import { ADMIN_EMAIL } from '@/contexts/AuthContext';
+import { CANONICAL_SUPPORT_ADMIN_UID } from '@/components/admin/AdminUserListForChat';
 import { chatWithAgent, type ChatHistoryItem } from '@/ai/flows/chatWithAgentFlow';
 import { triggerPushNotification } from '@/lib/fcmUtils';
 import { cn, getTimestampMillis } from '@/lib/utils';
@@ -24,13 +25,28 @@ interface ChatWindowProps {
 const ADMIN_FALLBACK_NAME = "Support";
 const ADMIN_FALLBACK_AVATAR_INITIAL = "S";
 
-// Function to find URLs in text and wrap them in anchor tags
-const linkify = (text: string) => {
-    const urlRegex = /(\b(https?|ftp|file):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])|(\bwww\.[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
-    return text.replace(urlRegex, (url) => {
-        const fullUrl = url.startsWith('www.') ? `http://${url}` : url;
-        return `<a href="${fullUrl}" target="_blank" rel="noopener noreferrer" class="text-primary font-medium underline hover:text-primary/80 transition-colors">${url}</a>`;
-    });
+// Function to format chat messages with clean markdown links, bold text, and clickable URLs
+const formatChatMessage = (text: string) => {
+  if (!text) return '';
+  // 1. Convert Markdown links: [Title](url) -> <a href="url">Title</a>
+  const mdLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  let formatted = text.replace(mdLinkRegex, (_, title, url) => {
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="font-semibold underline text-primary hover:text-primary/80 transition-colors">${title}</a>`;
+  });
+
+  // 2. Convert Bold: **text** -> <strong>text</strong>
+  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // 3. Convert Strikethrough: ~~text~~ -> <del class="opacity-75">text</del>
+  formatted = formatted.replace(/~~([^~]+)~~/g, '<del class="opacity-75">$1</del>');
+
+  // 4. Auto-link remaining raw URLs that are not already inside href
+  const rawUrlRegex = /(?<!href="|href='|">)(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi;
+  formatted = formatted.replace(rawUrlRegex, (url) => {
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="font-medium underline text-primary hover:text-primary/80 transition-colors">${url}</a>`;
+  });
+
+  return formatted;
 };
 
 
@@ -39,6 +55,7 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
   const [isAiTyping, setIsAiTyping] = useState(false);
+  const [isAdminTyping, setIsAdminTyping] = useState(false);
   const scrollAreaRootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
@@ -46,6 +63,8 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
   const { user: currentUser } = useAuth();
   const { settings: globalSettings, isLoading: isLoadingGlobalSettings } = useGlobalSettings();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const userTypingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUserTypingReportRef = useRef<number>(0);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return;
@@ -88,9 +107,6 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
     }
   };
 
-  const handleBlur = () => {
-    // no-op
-  };
 
   const [adminProfile, setAdminProfile] = useState<{displayName?: string | null, photoURL?: string | null, uid?: string | null}>({
     displayName: ADMIN_FALLBACK_NAME,
@@ -108,6 +124,8 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
     }
   }, [globalSettings?.chatNotificationSoundUrl]);
 
+
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const getChatSessionId = useCallback((userId1: string, userId2: string): string => {
     return [userId1, userId2].sort().join('_');
@@ -195,6 +213,22 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
         }, { merge: true });
       }
 
+      // Real-time listener for Admin Typing indication
+      const unsubSession = onSnapshot(sessionDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as ChatSession;
+          const adminTypingAt = data.adminTypingAt ? getTimestampMillis(data.adminTypingAt) : 0;
+          const isRecent = adminTypingAt ? (Date.now() - adminTypingAt < 5000) : false;
+          setIsAdminTyping(Boolean(data.isAdminTyping && (isRecent || !data.adminTypingAt)));
+        } else {
+          setIsAdminTyping(false);
+        }
+      });
+
+      return () => {
+        unsubscribe();
+        unsubSession();
+      };
     }, (error) => {
       console.error(`ChatWindow: Error fetching messages for session ${chatSessionId}:`, error);
       setIsLoadingMessages(false);
@@ -205,6 +239,83 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
     };
   }, [currentUser, chatSessionId, adminProfile.uid, isLoadingAdminProfile]);
 
+  const reportUserTyping = useCallback((isTyping: boolean) => {
+    if (!chatSessionId || !currentUser) return;
+    try {
+      const sessionDocRef = doc(db, 'chats', chatSessionId);
+      setDoc(sessionDocRef, {
+        isUserTyping: isTyping,
+        userTypingAt: isTyping ? Date.now() : null,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (e) {
+      console.error("ChatWindow: Error reporting user typing:", e);
+    }
+  }, [chatSessionId, currentUser]);
+
+  const handleUserInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setNewMessage(val);
+
+    if (val.trim()) {
+      const now = Date.now();
+      if (now - lastUserTypingReportRef.current > 2000) {
+        lastUserTypingReportRef.current = now;
+        reportUserTyping(true);
+      }
+
+      if (userTypingTimeoutRef.current) clearTimeout(userTypingTimeoutRef.current);
+      userTypingTimeoutRef.current = setTimeout(() => {
+        reportUserTyping(false);
+      }, 3000);
+    } else {
+      if (userTypingTimeoutRef.current) clearTimeout(userTypingTimeoutRef.current);
+      reportUserTyping(false);
+    }
+  };
+
+  const handleBlur = () => {
+    if (userTypingTimeoutRef.current) clearTimeout(userTypingTimeoutRef.current);
+    reportUserTyping(false);
+  };
+
+  useEffect(() => {
+    const handleLeave = () => {
+      if (userTypingTimeoutRef.current) clearTimeout(userTypingTimeoutRef.current);
+      if (chatSessionId && currentUser) {
+        reportUserTyping(false);
+        try {
+          fetch('/api/db/mutate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'setDoc',
+              path: 'chats',
+              id: chatSessionId,
+              data: { isUserTyping: false, userTypingAt: null },
+              options: { merge: true }
+            }),
+            keepalive: true
+          });
+        } catch (e) {
+          // ignore unload error
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleLeave);
+    window.addEventListener('pagehide', handleLeave);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleLeave);
+      window.removeEventListener('pagehide', handleLeave);
+      if (userTypingTimeoutRef.current) clearTimeout(userTypingTimeoutRef.current);
+      if (chatSessionId && currentUser) {
+        reportUserTyping(false);
+      }
+    };
+  }, [chatSessionId, currentUser, reportUserTyping]);
+
   useEffect(() => {
     if (scrollAreaRootRef.current) {
       const viewport = scrollAreaRootRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
@@ -212,7 +323,7 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
         viewport.scrollTop = viewport.scrollHeight;
       }
     }
-  }, [messages, isLoadingMessages, isAiTyping]);
+  }, [messages, isLoadingMessages, isAiTyping, isAdminTyping]);
 
   // Auto-resize textarea height
   useEffect(() => {
@@ -235,6 +346,8 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
     if (!newMessage.trim() || !currentUser || !chatSessionId || !adminProfile.uid) {
         return;
     }
+    if (userTypingTimeoutRef.current) clearTimeout(userTypingTimeoutRef.current);
+    reportUserTyping(false);
 
     const messageData: Omit<ChatMessage, 'id'> = {
       chatSessionId: chatSessionId,
@@ -278,6 +391,8 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
         participants: [currentUser.uid, adminProfile.uid].filter(p => p !== null && p !== undefined),
         userUnreadCount: 0,
         adminUnreadCount: currentAdminUnreadCount + 1,
+        isUserTyping: false,
+        userTypingAt: null,
         updatedAt: messageData.timestamp,
         ...(currentSessionData ? {} : { createdAt: messageData.timestamp })
       }, { merge: true });
@@ -303,7 +418,12 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
           userId: adminProfile.uid,
           title: `Message from ${currentUser.displayName || currentUser.email}`,
           body: tempNewMessage,
-          href: '/admin/chat'
+          href: '/admin/chat',
+          variables: {
+            senderName: currentUser.displayName || currentUser.email || 'Customer',
+            messageText: tempNewMessage,
+            siteName: 'Yourbrand'
+          }
         });
       }
       
@@ -475,10 +595,17 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
             <CardTitle className="text-base font-headline font-bold leading-tight">
               {adminProfile.displayName || ADMIN_FALLBACK_NAME}
             </CardTitle>
-            <span className="text-[10px] text-green-600 font-semibold uppercase tracking-wider flex items-center">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse" />
-              Online Support
-            </span>
+            {isAdminTyping ? (
+              <span className="text-[10px] text-primary font-bold uppercase tracking-wider flex items-center animate-pulse">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary mr-1.5 animate-ping" />
+                typing...
+              </span>
+            ) : (
+              <span className="text-[10px] text-green-600 font-semibold uppercase tracking-wider flex items-center">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse" />
+                Online Support
+              </span>
+            )}
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-destructive/10 hover:text-destructive transition-all duration-200">
@@ -542,7 +669,7 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
                         {msg.text && (
                           <div 
                             className="whitespace-pre-wrap leading-relaxed" 
-                            dangerouslySetInnerHTML={{ __html: linkify(msg.text) }} 
+                            dangerouslySetInnerHTML={{ __html: formatChatMessage(msg.text) }} 
                           />
                         )}
                       </div>
@@ -572,15 +699,38 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
               {isAiTyping && (
                 <div className="flex items-start gap-2.5 animate-in fade-in duration-300">
                   <Avatar className="h-8 w-8 mt-1 border shadow-sm flex-shrink-0 ring-1 ring-border">
-  <AvatarFallback className="bg-background text-foreground">
-    <Bot className="h-4 w-4" />
-  </AvatarFallback>
-</Avatar>
+                    <AvatarFallback className="bg-background text-foreground">
+                      <Bot className="h-4 w-4" />
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="bg-secondary text-secondary-foreground border border-border/40 rounded-lg rounded-bl-none px-3 py-2.5 shadow-sm">
                     <div className="flex items-center space-x-1.5">
                       <span className="h-1.5 w-1.5 bg-muted-foreground/60 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                       <span className="h-1.5 w-1.5 bg-muted-foreground/60 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
                       <span className="h-1.5 w-1.5 bg-muted-foreground/60 rounded-full animate-bounce"></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isAdminTyping && (
+                <div className="flex items-start gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <Avatar className="h-8 w-8 mt-1 border shadow-sm flex-shrink-0 ring-1 ring-border">
+                    <AvatarImage src={adminProfile.photoURL || undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                      {adminProfile.displayName?.charAt(0) || ADMIN_FALLBACK_AVATAR_INITIAL}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-[10px] text-muted-foreground font-medium pl-1">
+                      {adminProfile.displayName || ADMIN_FALLBACK_NAME} is typing...
+                    </span>
+                    <div className="bg-secondary text-secondary-foreground border border-border/40 rounded-2xl rounded-bl-none px-3.5 py-2.5 shadow-sm w-fit">
+                      <div className="flex items-center space-x-1.5">
+                        <span className="h-1.5 w-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                        <span className="h-1.5 w-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                        <span className="h-1.5 w-1.5 bg-primary rounded-full animate-bounce"></span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -596,7 +746,7 @@ export default function ChatWindow({ onClose }: ChatWindowProps) {
             <textarea
               ref={inputRef}
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={handleUserInputChange}
               onKeyDown={handleKeyDown}
               onFocus={handleFocus}
               onBlur={handleBlur}

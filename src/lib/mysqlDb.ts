@@ -17,7 +17,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   };
 
   if (typeof window === 'undefined') {
-    const secret = process.env.INTERNAL_API_SECRET || "default_internal_secret_key_123456";
+    const secret = process.env.INTERNAL_API_SECRET || "yourbrand_internal_secret_j7K9R2pX_2026";
     headers['x-internal-token'] = secret;
   } else {
     try {
@@ -465,11 +465,13 @@ export function onSnapshot(
 export function onSnapshot(queryOrDocRef: any, arg2: any, arg3?: any, arg4?: any): () => void {
   let callback: (snapshot: any) => void;
   let onError: ((error: any) => void) | undefined;
+  let customInterval: number | undefined;
 
   if (typeof arg2 === 'function') {
     callback = arg2;
     onError = arg3;
   } else {
+    customInterval = arg2?.intervalMs;
     callback = arg3;
     onError = arg4;
   }
@@ -477,6 +479,9 @@ export function onSnapshot(queryOrDocRef: any, arg2: any, arg3?: any, arg4?: any
   let isCancelled = false;
   let intervalId: any = null;
   let lastDataHash = '';
+
+  const isChat = queryOrDocRef?.path?.startsWith('chats');
+  const pollInterval = customInterval || (isChat ? 2000 : 8000);
 
   const run = async () => {
     try {
@@ -508,7 +513,7 @@ export function onSnapshot(queryOrDocRef: any, arg2: any, arg3?: any, arg4?: any
   };
 
   run();
-  intervalId = setInterval(run, 8000);
+  intervalId = setInterval(run, pollInterval);
 
   return () => {
     isCancelled = true;

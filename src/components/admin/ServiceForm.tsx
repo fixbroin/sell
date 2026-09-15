@@ -27,6 +27,7 @@ import { compressImage } from "@/lib/imageCompressor";
 import { nanoid } from 'nanoid';
 import { useApplicationConfig } from "@/hooks/useApplicationConfig";
 import { generateServiceDetails } from '@/ai/flows/generateServiceDetailsFlow';
+import { stripBrandSuffix, truncateSeoString } from '@/lib/seoAdvancedUtils';
 
 const generateSlug = (name: string) => {
   if (!name) return "";
@@ -457,17 +458,17 @@ export default function ServiceForm({ onSubmit: onSubmitProp, initialData, onCan
       if (result) {
         form.setValue('description', result.shortDescription, { shouldValidate: true });
         form.setValue('shortDescription', result.fullDescription, { shouldValidate: true });
-        form.setValue('fullDescription', result.pleaseNote?.join('\n') || '', { shouldValidate: true });
-        form.setValue('imageHint', result.imageHint, { shouldValidate: true });
-        replaceHighlights(result.serviceHighlights.map(h => ({ value: h })) || []);
-        replaceIncluded(result.includedItems.map(i => ({ value: i })) || []);
-        replaceExcluded(result.excludedItems.map(e => ({ value: e })) || []);
+        form.setValue('fullDescription', (result.pleaseNote || []).join('\n\n'), { shouldValidate: true });
+        form.setValue('imageHint', truncateSeoString(result.imageHint || '', 50), { shouldValidate: true });
+        replaceHighlights((result.serviceHighlights || []).map(h => ({ value: h })));
+        replaceIncluded((result.includedItems || []).map(i => ({ value: i })));
+        replaceExcluded((result.excludedItems || []).map(e => ({ value: e })));
         form.setValue('taskTimeValue', result.taskTime.value, { shouldValidate: true });
         form.setValue('taskTimeUnit', result.taskTime.unit, { shouldValidate: true });
-        const faqsWithIds = result.serviceFaqs.map(faq => ({...faq, id: nanoid() }));
+        const faqsWithIds = (result.serviceFaqs || []).map(faq => ({ ...faq, id: nanoid() }));
         replaceFaqs(faqsWithIds);
         form.setValue('h1_title', result.seo.h1_title, { shouldValidate: true });
-        form.setValue('seo_title', result.seo.seo_title, { shouldValidate: true });
+        form.setValue('seo_title', stripBrandSuffix(result.seo.seo_title), { shouldValidate: true });
         form.setValue('seo_description', result.seo.seo_description, { shouldValidate: true });
         form.setValue('seo_keywords', result.seo.seo_keywords, { shouldValidate: true });
         form.setValue('rating', result.rating, { shouldValidate: true });

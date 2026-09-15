@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getPool, getDocInternal } from '@/lib/mysql';
-import { verifyRequest, validateAccess } from '@/lib/dbSecurity';
+import { verifyRequest, validateAccess, isUserAdmin } from '@/lib/dbSecurity';
 
 const docCache = new Map<string, { data: any; expiresAt: number }>();
 const CACHE_TTL_MS = 5000;
@@ -32,6 +32,21 @@ export async function POST(request: NextRequest) {
 
     const pool = await getPool();
     const result = await getDocInternal(pool, path, docId);
+
+    // Sanitize sensitive provider data if non-admin is fetching someone else's provider application
+    if (path === 'providerApplications' && !isUserAdmin(user) && docId !== user.uid && result?.data) {
+      const {
+        bankAccount,
+        bankDetails,
+        kycDocuments,
+        aadhaarNumber,
+        panNumber,
+        adminReviewNotes,
+        signatureUrl,
+        ...safeData
+      } = result.data;
+      result.data = safeData;
+    }
 
     if (isCacheable) {
       docCache.set(fullPath, { data: result, expiresAt: Date.now() + CACHE_TTL_MS });

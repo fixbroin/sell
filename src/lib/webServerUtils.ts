@@ -440,25 +440,19 @@ export const getAreaServiceSeoSettings = cache(async (): Promise<AreaServiceSeoS
 });
 
 /**
- * Fetches the cache versions document from Firestore with caching.
+ * Fetches the cache versions document from Firestore with real-time accuracy.
  */
 export const getRemoteCacheVersionsServer = cache(async (): Promise<any> => {
-  return unstable_cache(
-    async () => {
-      try {
-        const docSnap = await adminDb.collection("appConfiguration").doc("cacheVersions").get();
-        if (docSnap.exists) {
-          return serializeFirestoreData(docSnap.data() || {});
-        }
-        return {};
-      } catch (error) {
-        console.error("Error fetching cache versions via Admin SDK:", error);
-        return {};
-      }
-    },
-    ['server-cache-versions'],
-    { revalidate: 86400, tags: ['global-cache'] }
-  )();
+  try {
+    const docSnap = await adminDb.collection("appConfiguration").doc("cacheVersions").get();
+    if (docSnap.exists) {
+      return serializeFirestoreData(docSnap.data() || {});
+    }
+    return {};
+  } catch (error) {
+    console.error("Error fetching cache versions via Admin SDK:", error);
+    return {};
+  }
 });
 
 /**

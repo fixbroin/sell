@@ -53,12 +53,37 @@ export function cleanSeoString(text: string | undefined | null): string {
   // We allow "Carpenter in Whitefield | Carpenter near me" because they are not adjacent.
   cleaned = cleaned.replace(/\b(\w+)\s+\1\b/gi, '$1');
 
-  // 3. Specific cleanup for Yourbrand
-  // If "Yourbrand" is at the end of multiple segments, it's fine. 
-  // e.g., "Carpenter in Whitefield | Yourbrand"
+  // 3. Remove any trailing separator characters like '|', '-', ':'
+  cleaned = cleaned.replace(/[\s\|\-\–\—\:]+$/, '').trim();
 
   return cleaned;
 }
+
+/**
+ * Strips any trailing company or brand name from an SEO title
+ * (e.g. "| Yourbrand", "- Yourbrand", "| Fixbro") so that the root layout
+ * metadata template (`%s - Brand`) does not create duplicate brand names.
+ */
+export function stripBrandSuffix(title: string | undefined | null, brandName?: string): string {
+  if (!title) return '';
+  let cleaned = title.trim();
+
+  const brands = ['yourbrand', 'fixbro'];
+  if (brandName && brandName.trim()) {
+    brands.push(brandName.trim().toLowerCase());
+  }
+
+  // Iteratively strip trailing brand matches
+  for (const b of brands) {
+    const regex = new RegExp(`\\s*(?:[\\|\\-\\–\\—\\:]|by)\\s*${b}\\s*$`, 'i');
+    cleaned = cleaned.replace(regex, '').trim();
+  }
+
+  // Clean trailing punctuation/pipes
+  cleaned = cleaned.replace(/[\s\|\-\–\—\:]+$/, '').trim();
+  return cleaned;
+}
+
 
 /**
  * Ensures a string doesn't exceed a certain length while keeping it natural.

@@ -19,6 +19,7 @@ import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { useAuth } from '@/hooks/useAuth';
 import { logUserActivity } from '@/lib/activityLogger';
 import { getGuestId } from '@/lib/guestIdManager';
+import { getActiveCheckoutEntries } from '@/lib/cartManager';
 
 const MapAddressSelector = dynamic(() => import('@/components/checkout/MapAddressSelector'), {
   loading: () => <div className="flex items-center justify-center h-64 bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin" /></div>,
@@ -55,7 +56,15 @@ export default function AddressSelection({ onSelect, initialAddressId }: Address
   const [providerZones, setProviderZones] = useState<ServiceZone[]>([]);
   const [isLoadingZones, setIsLoadingZones] = useState(true);
 
-  const currentCategoryId = typeof window !== 'undefined' ? localStorage.getItem('yourbrandActiveCheckoutCategory') : null;
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setActiveCategoryId(localStorage.getItem('yourbrandActiveCheckoutCategory'));
+    }
+  }, []);
+
+  const currentCategoryId = activeCategoryId || (typeof window !== 'undefined' ? localStorage.getItem('yourbrandActiveCheckoutCategory') : null);
 
   const applicableServiceZones = useMemo(() => {
     const adminZones = allServiceZones.filter(zone => {
@@ -73,26 +82,54 @@ export default function AddressSelection({ onSelect, initialAddressId }: Address
         const zonesSnapshot = await getDocs(zonesQuery);
         setAllServiceZones(zonesSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ServiceZone)));
 
-        if (currentCategoryId) {
+        const activeEntries = getActiveCheckoutEntries();
+        const activeServiceIds = activeEntries.map(e => e.serviceId).filter(Boolean);
+        const effectiveCategoryId = activeCategoryId || (typeof window !== 'undefined' ? localStorage.getItem('yourbrandActiveCheckoutCategory') : null);
+
+        if (effectiveCategoryId || activeServiceIds.length > 0) {
           const providersQuery = query(
             collection(db, 'providerApplications'), 
-            where('status', '==', 'approved'),
-            where('workCategoryId', '==', currentCategoryId)
+            where('status', '==', 'approved')
           );
           const providersSnapshot = await getDocs(providersQuery);
-          setProviderZones(providersSnapshot.docs
-            .filter(doc => doc.data().workAreaCenter && doc.data().workAreaRadiusKm)
-            .map(doc => {
-              const data = doc.data();
-              return {
-                id: `provider_${doc.id}`,
-                name: data.fullName || 'Service Provider',
-                center: { latitude: data.workAreaCenter.latitude, longitude: data.workAreaCenter.longitude },
-                radiusKm: data.workAreaRadiusKm,
-                isActive: true,
-                createdAt: data.createdAt || Timestamp.now(),
-              } as ServiceZone;
-            }));
+
+          const matchingDocs = providersSnapshot.docs.filter(doc => {
+            const p = doc.data();
+            if (p.isOnline === false) return false;
+            if (!p.workAreaCenter || !p.workAreaRadiusKm) return false;
+
+            // If there are active services in checkout, provider must be able to do EVERY service in the cart:
+            if (activeServiceIds.length > 0) {
+              return activeServiceIds.every(sId => {
+                const hasCategory = effectiveCategoryId && (
+                  p.workCategoryId === effectiveCategoryId ||
+                  (Array.isArray(p.allCategoryIds) && p.allCategoryIds.includes(effectiveCategoryId))
+                );
+                const hasSpecificService = (Array.isArray(p.additionalServiceIds) && p.additionalServiceIds.includes(sId)) ||
+                                           (Array.isArray(p.additionalServices) && p.additionalServices.some((s: any) => s.id === sId));
+                return hasCategory || hasSpecificService;
+              });
+            }
+
+            // Fallback if no specific service IDs are in the cart:
+            const matchesCategory = effectiveCategoryId && (
+              p.workCategoryId === effectiveCategoryId ||
+              (Array.isArray(p.allCategoryIds) && p.allCategoryIds.includes(effectiveCategoryId))
+            );
+            return matchesCategory;
+          });
+
+          setProviderZones(matchingDocs.map(doc => {
+            const data = doc.data();
+            return {
+              id: `provider_${doc.id}`,
+              name: data.fullName || 'Service Provider',
+              center: { latitude: data.workAreaCenter.latitude, longitude: data.workAreaCenter.longitude },
+              radiusKm: data.workAreaRadiusKm,
+              isActive: true,
+              createdAt: data.createdAt || Timestamp.now(),
+            } as ServiceZone;
+          }));
         }
       } catch (error) {
         console.error("Error fetching serviceability data:", error);
@@ -101,7 +138,7 @@ export default function AddressSelection({ onSelect, initialAddressId }: Address
       }
     };
     fetchZonesAndProviders();
-  }, [currentCategoryId]);
+  }, [activeCategoryId]);
 
   useEffect(() => {
     if (!user) {
@@ -139,15 +176,19 @@ export default function AddressSelection({ onSelect, initialAddressId }: Address
 
   const checkServiceability = useCallback((address: Address | Partial<AddressFormData>) => {
     if (isLoadingZones) return; 
-    if (allServiceZones.length === 0) { setIsServiceable(true); return; }
     if (!address.latitude || !address.longitude) { setIsServiceable(null); return; }
+
+    if (applicableServiceZones.length === 0) {
+      setIsServiceable(false);
+      return;
+    }
 
     const serviceable = applicableServiceZones.some(zone => {
       const distance = getHaversineDistance(address.latitude!, address.longitude!, zone.center.latitude, zone.center.longitude);
       return distance <= zone.radiusKm;
     });
     setIsServiceable(serviceable);
-  }, [allServiceZones, applicableServiceZones, isLoadingZones]);
+  }, [applicableServiceZones, isLoadingZones]);
 
   useEffect(() => {
     const selectedAddress = savedAddresses.find(a => a.id === selectedAddressId);
@@ -165,7 +206,7 @@ export default function AddressSelection({ onSelect, initialAddressId }: Address
           logUserActivity(
             'checkoutStep',
             {
-              checkoutStepName: 'out_of_coverage',
+              checkoutStepName: applicableServiceZones.length === 0 ? 'providers_unavailable' : 'out_of_coverage',
               addressId: selectedAddress.id,
               fullName: selectedAddress.fullName,
               city: selectedAddress.city,
@@ -181,7 +222,7 @@ export default function AddressSelection({ onSelect, initialAddressId }: Address
     } else if (isServiceable === true) {
       lastLoggedOutOfCoverageIdRef.current = null;
     }
-  }, [isServiceable, selectedAddressId, savedAddresses, user, firestoreUser]);
+  }, [isServiceable, selectedAddressId, savedAddresses, user, firestoreUser, applicableServiceZones]);
 
   const handleOpenMapClick = useCallback(async () => {
     setEditingAddress(null);
@@ -360,9 +401,15 @@ export default function AddressSelection({ onSelect, initialAddressId }: Address
       {isServiceable === false && selectedAddressId && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Area Not Serviceable</AlertTitle>
+          <AlertTitle>
+            {applicableServiceZones.length === 0
+              ? "Providers Currently Unavailable"
+              : "Area Not Serviceable"}
+          </AlertTitle>
           <AlertDescription>
-            Sorry, the selected address is outside our current service zones.
+            {applicableServiceZones.length === 0
+              ? "All service providers for this service are currently offline or fully busy. We will be back online soon! Please check back later."
+              : "Sorry, the selected address is outside our current service zones. Please select a different location."}
           </AlertDescription>
         </Alert>
       )}

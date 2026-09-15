@@ -408,7 +408,13 @@ export default function CustomServiceRequestForm({
           userId: adminUid,
           title: adminNotification.title,
           body: adminNotification.message,
-          href: adminNotification.href
+          href: adminNotification.href,
+          variables: {
+            customerName: user.displayName || user.email || 'Customer',
+            serviceName: data.serviceTitle,
+            preferredDate: data.preferredStartDate ? data.preferredStartDate.toLocaleDateString() : 'As soon as possible',
+            siteName: 'Yourbrand'
+          }
         });
 
         if (appConfig.smtpHost && appConfig.senderEmail) {

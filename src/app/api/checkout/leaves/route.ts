@@ -6,10 +6,12 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
     try {
         const leavesSnap = await adminDb.collection("leaves").get();
-        const leaves = leavesSnap.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        const leaves = leavesSnap.docs
+            .map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }))
+            .filter((l: any) => !l.providerId); // Return only platform-wide holidays for public calendar
         return NextResponse.json(leaves);
     } catch (error) {
         console.error("Error fetching leaves in API:", error);

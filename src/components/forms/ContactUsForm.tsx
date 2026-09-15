@@ -79,7 +79,14 @@ export default function ContactUsForm() {
             userId: adminId,
             title: adminNotification.title,
             body: adminNotification.message,
-            href: adminNotification.href
+            href: adminNotification.href,
+            variables: {
+              name: data.name,
+              email: data.email,
+              subject: data.phone ? `Phone: ${data.phone}` : 'Website Inquiry',
+              message: data.message,
+              siteName: 'Yourbrand'
+            }
           }).catch(err => console.error("Error sending admin inquiry push:", err));
         }
       } catch (notifyErr) {

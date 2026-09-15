@@ -48,6 +48,21 @@ export function getTimestampMillis(ts: any): number {
 }
 
 /**
+ * Checks whether a booking payment method represents Pay After Service
+ * (collected directly by the provider on-site).
+ * FixBro has only two payment methods:
+ * 1. "Online" (Customer paid online via Razorpay/Stripe)
+ * 2. "Pay After Service" (Provider collects payment on-site)
+ */
+export function isCashPayment(method?: string): boolean {
+  if (!method) return true;
+  const lower = method.toLowerCase().trim();
+  return lower !== 'online';
+}
+
+export const isPayAfterService = isCashPayment;
+
+/**
  * Returns a Date object shifted to represent the target timezone's local time.
  * Useful for "now" calculations on servers with different default timezones.
  * It uses a component-based approach which is much more reliable than string parsing.
@@ -148,9 +163,26 @@ function getClientSideDateFormat(): string | undefined {
   return undefined;
 }
 
+export function getClientSideTimezone(): string | undefined {
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('yourbrand_cache_app-config');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.data?.timezone) {
+          return parsed.data.timezone;
+        }
+      }
+    } catch (e) {}
+  }
+  return undefined;
+}
+
 export function formatCustomDate(date: Date, formatStr: string, timeZone: string = 'Asia/Kolkata'): string {
   try {
-    const validTz = (timeZone && typeof timeZone === 'string' && timeZone.trim()) ? timeZone.trim() : 'Asia/Kolkata';
+    const clientTz = getClientSideTimezone();
+    const effectiveTz = (timeZone && timeZone !== 'Asia/Kolkata') ? timeZone.trim() : (clientTz || timeZone || 'Asia/Kolkata');
+    const validTz = effectiveTz.trim() || 'Asia/Kolkata';
     const dtf = new Intl.DateTimeFormat('en-US', {
       timeZone: validTz,
       year: 'numeric',
@@ -214,7 +246,9 @@ export function formatDateInTimezone(
     try {
       const d = new Date(date);
       if (isNaN(d.getTime())) return String(date);
-      const validTz = (timeZone && typeof timeZone === 'string' && timeZone.trim()) ? timeZone.trim() : 'Asia/Kolkata';
+      const clientTz = getClientSideTimezone();
+      const effectiveTz = (timeZone && timeZone !== 'Asia/Kolkata') ? timeZone.trim() : (clientTz || timeZone || 'Asia/Kolkata');
+      const validTz = effectiveTz.trim() || 'Asia/Kolkata';
 
       if (typeof optionsOrFormat === 'string') {
         return formatCustomDate(d, optionsOrFormat, validTz);
@@ -252,7 +286,9 @@ export function formatTimeInTimezone(date: Date | string | number | undefined, t
     try {
       const d = new Date(date);
       if (isNaN(d.getTime())) return String(date);
-      const validTz = (timeZone && typeof timeZone === 'string' && timeZone.trim()) ? timeZone.trim() : 'Asia/Kolkata';
+      const clientTz = getClientSideTimezone();
+      const effectiveTz = (timeZone && timeZone !== 'Asia/Kolkata') ? timeZone.trim() : (clientTz || timeZone || 'Asia/Kolkata');
+      const validTz = effectiveTz.trim() || 'Asia/Kolkata';
       return new Intl.DateTimeFormat('en-IN', { ...options, timeZone: validTz }).format(d);
     } catch (e) {
       return String(date);

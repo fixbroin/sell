@@ -5,17 +5,17 @@ import { DEFAULT_LIGHT_THEME_COLORS_HSL, DEFAULT_DARK_THEME_COLORS_HSL } from '@
 export const defaultGlobalWebSettings: GlobalWebSettings = {
   websiteName: "Yourbrand",
   contactEmail: "support@yourdomain.com",
-  contactMobile: "+1 123-456-7890",
+  contactMobile: "+917353113455",
   address: "123 Main Street, City, Country - 123456",
   logoUrl: "/android-chrome-512x512.png",
   faviconUrl: "/favicon.ico",
   websiteIconUrl: "/android-chrome-512x512.png",
   socialMediaLinks: {
     facebook: "https://www.facebook.com/yourbrand.in",
-    instagram: "https://www.instagram.com/yourbrand",
-    twitter: "https://x.com/yourbrand",
+    instagram: "https://www.instagram.com/yourbrand.in",
+    twitter: "https://x.com/yourbrand_in",
     linkedin: "https://www.linkedin.com/company/yourbrand-in",
-    youtube: "https://www.youtube.com/@yourbrand",
+    youtube: "https://www.youtube.com/@yourbrand-in",
   },
   themeColors: {
     light: { ...DEFAULT_LIGHT_THEME_COLORS_HSL },

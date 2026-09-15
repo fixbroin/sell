@@ -90,8 +90,9 @@ export default function ExperienceLevelManager() {
       await triggerRefresh('global-cache');
       setLevels(currentLevels.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: "Experience level deleted." });
-    } catch (error) {
-      toast({ title: "Error", description: "Could not delete experience level.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error deleting experience level:", error);
+      toast({ title: "Error", description: error?.message || "Could not delete experience level.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -119,8 +120,9 @@ export default function ExperienceLevelManager() {
       setLevels(updatedLevels.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: `Experience level ${editingLevel ? 'updated' : 'added'}.` });
       setIsFormOpen(false);
-    } catch (error) {
-      toast({ title: "Error", description: `Could not save experience level.`, variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error saving experience level:", error);
+      toast({ title: "Error", description: error?.message || `Could not save experience level.`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

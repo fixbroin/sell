@@ -13,9 +13,12 @@ import type { FirestoreUser, ChatSession } from '@/types/firestore';
 import { cn, getTimestampMillis } from '@/lib/utils';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
+import { ADMIN_EMAIL } from '@/contexts/AuthContext';
+
+export const CANONICAL_SUPPORT_ADMIN_UID = 'support_admin_master';
 
 interface AdminUserListForChatProps {
-  onSelectUser: (user: FirestoreUser) => void;
+  onSelectUser: (user: FirestoreUser, sessionId?: string) => void;
   selectedUserId?: string | null;
   scrollAreaHeightClass?: string;
 }
@@ -31,7 +34,25 @@ export default function AdminUserListForChat({
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [chatSessions, setChatSessions] = useState<Record<string, ChatSession>>({});
+  const [supportAdminUid, setSupportAdminUid] = useState<string | null>(null);
   const { user: adminUser } = useAuth();
+
+  useEffect(() => {
+    const fetchSupportAdminProfile = async () => {
+      try {
+        const adminQuery = query(collection(db, "users"), where("email", "==", ADMIN_EMAIL), limit(1));
+        const adminSnapshot = await getDocs(adminQuery);
+        if (!adminSnapshot.empty) {
+          setSupportAdminUid(adminSnapshot.docs[0].id);
+        } else {
+          setSupportAdminUid(CANONICAL_SUPPORT_ADMIN_UID);
+        }
+      } catch (error) {
+        setSupportAdminUid(CANONICAL_SUPPORT_ADMIN_UID);
+      }
+    };
+    fetchSupportAdminProfile();
+  }, []);
 
   // 1. Fetch Recent Chat Sessions (Live Listener)
   useEffect(() => {
@@ -48,42 +69,88 @@ export default function AdminUserListForChat({
     const unsubscribeChats = onSnapshot(q, async (snapshot) => {
       const sessions: Record<string, ChatSession> = {};
       const userIdsToFetch: string[] = [];
+      const preliminaryUsersMap: Record<string, FirestoreUser> = {};
+
+      const adminUids = new Set(
+        [adminUser?.uid, supportAdminUid, 'fallback_admin_uid', 'admin_master_id', CANONICAL_SUPPORT_ADMIN_UID].filter(Boolean)
+      );
 
       snapshot.forEach(docSnap => {
         const session = { id: docSnap.id, ...docSnap.data() } as ChatSession;
-        const participantUserId = session.userId || session.participants?.find(pId => pId !== adminUser?.uid);
-        if (participantUserId) {
-          sessions[participantUserId] = session;
-          if (!userIdsToFetch.includes(participantUserId)) {
-            userIdsToFetch.push(participantUserId);
+
+        // Find customer UID from session (never the admin)
+        let customerUid: string | null = null;
+        if (session.userId && !adminUids.has(session.userId)) {
+          customerUid = session.userId;
+        } else if (Array.isArray(session.participants)) {
+          customerUid = session.participants.find(p => p && !adminUids.has(p)) || null;
+        } else if (session.id && session.id.includes('_')) {
+          customerUid = session.id.split('_').find(p => p && !adminUids.has(p)) || null;
+        }
+
+        if (!customerUid && session.userId && !adminUids.has(session.userId)) {
+          customerUid = session.userId;
+        }
+
+        if (customerUid && !adminUids.has(customerUid)) {
+          const existingSession = sessions[customerUid];
+          if (!existingSession) {
+            sessions[customerUid] = session;
+            if (!userIdsToFetch.includes(customerUid)) {
+              userIdsToFetch.push(customerUid);
+            }
+          } else {
+            // Keep the session with unread messages or newest activity!
+            const currentUnread = Number(existingSession.adminUnreadCount) || 0;
+            const newUnread = Number(session.adminUnreadCount) || 0;
+            const currentTime = Math.max(
+              getTimestampMillis(existingSession.lastMessageTimestamp),
+              getTimestampMillis(existingSession.updatedAt)
+            );
+            const newTime = Math.max(
+              getTimestampMillis(session.lastMessageTimestamp),
+              getTimestampMillis(session.updatedAt)
+            );
+
+            if (newUnread > currentUnread || (newUnread === currentUnread && newTime > currentTime)) {
+              sessions[customerUid] = session;
+            }
           }
+
+          preliminaryUsersMap[customerUid] = {
+            id: customerUid,
+            displayName: sessions[customerUid]?.userName || session.userName || "Customer",
+            photoURL: sessions[customerUid]?.userPhotoUrl || session.userPhotoUrl || undefined,
+            email: ""
+          } as FirestoreUser;
         }
       });
 
       setChatSessions(sessions);
 
       if (userIdsToFetch.length > 0) {
-        // Fetch user profiles for these IDs in chunks of 30
-        const fetchedUsersMap: Record<string, FirestoreUser> = {};
-        for (let i = 0; i < userIdsToFetch.length; i += 30) {
-          const chunk = userIdsToFetch.slice(i, i + 30);
-          const usersQuery = query(collection(db, "users"), where(documentId(), "in", chunk));
-          const userSnap = await getDocs(usersQuery);
-          userSnap.forEach(d => {
-            fetchedUsersMap[d.id] = { ...d.data(), id: d.id } as FirestoreUser;
-          });
-        }
-        
-        // Sort users by the latest message / update timestamp of their chat session (newest at the top)
-        const sortedUsers = userIdsToFetch
-          .map(uid => fetchedUsersMap[uid] || { id: uid, displayName: sessions[uid]?.userName || "User", email: "" } as FirestoreUser)
-          .sort((a, b) => {
-            const timeA = getTimestampMillis(sessions[a.id]?.updatedAt || sessions[a.id]?.lastMessageTimestamp);
-            const timeB = getTimestampMillis(sessions[b.id]?.updatedAt || sessions[b.id]?.lastMessageTimestamp);
-            return timeB - timeA;
-          });
+        // Immediate zero-latency local state population so list updates in real-time
+        setRecentUsers(prev => {
+          const existingMap = new Map(prev.map(u => [u.id, u]));
+          return userIdsToFetch.map(uid => existingMap.get(uid) || preliminaryUsersMap[uid]);
+        });
 
-        setRecentUsers(sortedUsers);
+        // Enrich with full user details from users table
+        try {
+          const fetchedUsersMap: Record<string, FirestoreUser> = {};
+          for (let i = 0; i < userIdsToFetch.length; i += 30) {
+            const chunk = userIdsToFetch.slice(i, i + 30);
+            const usersQuery = query(collection(db, "users"), where(documentId(), "in", chunk));
+            const userSnap = await getDocs(usersQuery);
+            userSnap.forEach(d => {
+              fetchedUsersMap[d.id] = { ...d.data(), id: d.id } as FirestoreUser;
+            });
+          }
+
+          setRecentUsers(userIdsToFetch.map(uid => fetchedUsersMap[uid] || preliminaryUsersMap[uid]));
+        } catch (err) {
+          console.error("Error enriching user profiles in chat list:", err);
+        }
       } else {
         setRecentUsers([]);
       }
@@ -94,7 +161,7 @@ export default function AdminUserListForChat({
     });
 
     return () => unsubscribeChats();
-  }, [adminUser?.uid]);
+  }, [adminUser?.uid, supportAdminUid]);
 
   // 2. Search Logic (Mirroring /admin/users)
   useEffect(() => {
@@ -180,20 +247,43 @@ export default function AdminUserListForChat({
       const sessionA = chatSessions[a.id];
       const sessionB = chatSessions[b.id];
 
-      const unreadA = sessionA?.adminUnreadCount || 0;
-      const unreadB = sessionB?.adminUnreadCount || 0;
+      const isTypingA = Boolean(
+        sessionA?.isUserTyping &&
+        (Date.now() - (getTimestampMillis(sessionA?.userTypingAt) || 0) < 6000)
+      );
+      const isTypingB = Boolean(
+        sessionB?.isUserTyping &&
+        (Date.now() - (getTimestampMillis(sessionB?.userTypingAt) || 0) < 6000)
+      );
 
-      // 1. Prioritize ANY unread messages
+      // 1. Actively typing user jumps to the top
+      if (isTypingA && !isTypingB) return -1;
+      if (isTypingB && !isTypingA) return 1;
+
+      const unreadA = Number(sessionA?.adminUnreadCount) || 0;
+      const unreadB = Number(sessionB?.adminUnreadCount) || 0;
+
+      // 2. Prioritize ANY unread messages
       if (unreadA > 0 && unreadB === 0) return -1;
       if (unreadB > 0 && unreadA === 0) return 1;
-      
-      // 2. If both have unread, or both have 0, sort by last message timestamp
-      const timeA = getTimestampMillis(sessionA?.lastMessageTimestamp) || 0;
-      const timeB = getTimestampMillis(sessionB?.lastMessageTimestamp) || 0;
+      if (unreadA !== unreadB && unreadA > 0 && unreadB > 0) return unreadB - unreadA;
+
+      // 3. Most recent activity (lastMessageTimestamp, updatedAt, or userTypingAt)
+      const timeA = Math.max(
+        getTimestampMillis(sessionA?.lastMessageTimestamp),
+        getTimestampMillis(sessionA?.updatedAt),
+        getTimestampMillis(sessionA?.userTypingAt)
+      ) || 0;
+
+      const timeB = Math.max(
+        getTimestampMillis(sessionB?.lastMessageTimestamp),
+        getTimestampMillis(sessionB?.updatedAt),
+        getTimestampMillis(sessionB?.userTypingAt)
+      ) || 0;
 
       if (timeA !== timeB) return timeB - timeA;
-      
-      // 3. Fallback to creation date (mostly for search results without sessions)
+
+      // 4. Fallback to creation date (mostly for search results without sessions)
       const createdAtA = getTimestampMillis(a.createdAt) || 0;
       const createdAtB = getTimestampMillis(b.createdAt) || 0;
       return createdAtB - createdAtA;
@@ -250,21 +340,27 @@ export default function AdminUserListForChat({
                   </div>
                 ) : sortedUsersForDisplay.map((user, index) => {
                   const session = chatSessions[user.id];
-                  const adminUnreadCount = session?.adminUnreadCount || 0;
+                  const adminUnreadCount = Number(session?.adminUnreadCount) || 0;
                   const isSelected = selectedUserId === user.id;
                   const lastMsg = session?.lastMessageText;
+                  const isTyping = Boolean(
+                    session?.isUserTyping &&
+                    (Date.now() - (getTimestampMillis(session?.userTypingAt) || 0) < 6000)
+                  );
 
                   return (
                     <button
                         key={user.id}
-                        onClick={() => onSelectUser(user)}
+                        onClick={() => onSelectUser(user, session?.id)}
                         className={cn(
                           "w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center space-x-3 relative group",
                           isSelected 
                             ? "bg-primary text-primary-foreground z-10 shadow-lg shadow-primary/20" 
                             : adminUnreadCount > 0 
-                                ? "bg-primary/5 hover:bg-primary/10 border border-primary/10" 
-                                : "hover:bg-accent/80 text-foreground"
+                                ? "bg-primary/5 hover:bg-primary/10 border border-primary/20" 
+                                : isTyping
+                                    ? "bg-primary/5 border border-primary/20"
+                                    : "hover:bg-accent/80 text-foreground"
                         )}
                     >
                         {/* Number Indicator (Top Left Ranking) */}
@@ -277,9 +373,15 @@ export default function AdminUserListForChat({
                         <div className="relative shrink-0">
                           <Avatar className={cn(
                             "h-11 w-11 border-2 transition-all duration-200",
-                            isSelected ? "border-primary-foreground/40" : adminUnreadCount > 0 ? "border-primary/30" : "border-transparent"
+                            isSelected 
+                              ? "border-primary-foreground/40" 
+                              : isTyping
+                                ? "border-primary ring-2 ring-primary/40 animate-pulse"
+                                : adminUnreadCount > 0 
+                                  ? "border-primary/40" 
+                                  : "border-transparent"
                           )}>
-                            <AvatarImage src={user.photoURL || undefined} alt={user.displayName || user.email || ""} />
+                            <AvatarImage src={user.photoURL || session?.userPhotoUrl || undefined} alt={user.displayName || user.email || ""} />
                             <AvatarFallback className={cn(isSelected ? "bg-primary-foreground/10" : "font-bold")}>
                                 {user.displayName ? user.displayName.charAt(0).toUpperCase() : <UserCircle size={20}/>}
                             </AvatarFallback>
@@ -294,20 +396,33 @@ export default function AdminUserListForChat({
                         <div className="flex-grow min-w-0">
                             <div className="flex items-center justify-between">
                                 <p className={cn("text-sm font-black truncate", isSelected ? "text-primary-foreground" : "text-foreground")}>
-                                  {user.displayName || user.email?.split('@')[0]}
+                                  {user.displayName || user.email?.split('@')[0] || "Customer"}
                                 </p>
                                 <span className={cn("text-[9px] font-medium whitespace-nowrap ml-2", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                                  {session?.lastMessageTimestamp ? formatLastActive(session.lastMessageTimestamp) : ''}
+                                  {isTyping ? (
+                                    <span className="text-primary font-bold animate-pulse">active</span>
+                                  ) : session?.lastMessageTimestamp || session?.updatedAt ? (
+                                    formatLastActive(session?.lastMessageTimestamp || session?.updatedAt)
+                                  ) : ''}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between mt-0.5">
-                              <p className={cn("text-[11px] truncate max-w-[150px]", isSelected ? "text-primary-foreground/80" : "text-muted-foreground")}>
-                                {lastMsg || user.mobileNumber || user.email}
-                              </p>
-                              {adminUnreadCount > 0 && !isSelected && (
-                                <div className="h-2 w-2 rounded-full bg-primary animate-pulse ml-2" />
+                              {isTyping ? (
+                                <p className={cn("text-[11px] font-bold animate-pulse flex items-center gap-1", isSelected ? "text-primary-foreground" : "text-primary")}>
+                                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-ping" />
+                                  typing...
+                                </p>
+                              ) : (
+                                <p className={cn("text-[11px] truncate max-w-[150px]", isSelected ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                                  {lastMsg || user.mobileNumber || user.email || "No message yet"}
+                                </p>
                               )}
-                              {!isSelected && !adminUnreadCount && user.lastLoginAt && (
+                              {adminUnreadCount > 0 && !isSelected && (
+                                <Badge className="h-4 min-w-4 flex items-center justify-center px-1 text-[9px] rounded-full font-bold ml-2 shadow-sm" variant="destructive">
+                                  {adminUnreadCount > 9 ? '9+' : adminUnreadCount}
+                                </Badge>
+                              )}
+                              {!isSelected && !adminUnreadCount && !isTyping && user.lastLoginAt && (
                                 <Circle className="h-1.5 w-1.5 fill-green-500 text-green-500 ml-2" />
                               )}
                             </div>

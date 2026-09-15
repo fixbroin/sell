@@ -4,10 +4,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Settings, Save, Loader2, AlertCircle, MapPin as MapIcon, MailIcon, PlaySquare, Percent, Ban, Users, Clock, DollarSign, CreditCard, Bell, Plus, Trash2, CalendarDays, Edit3, Activity } from "lucide-react";
+import { Settings, Save, Loader2, AlertCircle, MapPin as MapIcon, MailIcon, PlaySquare, Percent, Ban, Users, Clock, DollarSign, CreditCard, Bell, Plus, Trash2, CalendarDays, Edit3, Activity, Globe, User } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, Timestamp, collection, getDocs, addDoc, deleteDoc, query, orderBy } from '@/lib/mysqlDb';
+import { doc, getDoc, setDoc, Timestamp, collection, getDocs, addDoc, deleteDoc, query, orderBy, where } from '@/lib/mysqlDb';
 import { cn, formatDateInTimezone, formatTimeInTimezone, formatCustomDate } from '@/lib/utils';
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import type { AppSettings, DayAvailability } from '@/types/firestore'; 
@@ -194,6 +194,12 @@ export default function AdminSettingsPage() {
   const [leaveStartTime, setLeaveStartTime] = useState("09:00");
   const [leaveEndTime, setLeaveEndTime] = useState("17:00");
   const [leaveReason, setLeaveReason] = useState("");
+  const [leaveScope, setLeaveScope] = useState<'platform' | 'provider'>('platform');
+  const [selectedLeaveProviderId, setSelectedLeaveProviderId] = useState("");
+  const [isProviderPickerOpen, setIsProviderPickerOpen] = useState(false);
+  const [providerSearch, setProviderSearch] = useState("");
+  const [leavesFilterTab, setLeavesFilterTab] = useState<'all' | 'platform' | 'provider'>('all');
+  const [approvedProviders, setApprovedProviders] = useState<{ id: string; fullName: string; workCategoryName?: string }[]>([]);
   const [isSavingLeave, setIsSavingLeave] = useState(false);
   const [isLeaveTypePickerOpen, setIsLeaveTypePickerOpen] = useState(false);
   const [editingLeaveId, setEditingLeaveId] = useState<string | null>(null);
@@ -225,6 +231,19 @@ export default function AdminSettingsPage() {
     const search = currencySearch.toLowerCase().trim();
     return currenciesList.filter(c => c.code.toLowerCase().includes(search) || c.name.toLowerCase().includes(search));
   }, [currencySearch]);
+
+  const filteredApprovedProviders = useMemo(() => {
+    if (!providerSearch.trim()) return approvedProviders;
+    const q = providerSearch.toLowerCase().trim();
+    return approvedProviders.filter(p => 
+      p.fullName.toLowerCase().includes(q) || 
+      (p.workCategoryName && p.workCategoryName.toLowerCase().includes(q))
+    );
+  }, [approvedProviders, providerSearch]);
+
+  const selectedLeaveProvider = useMemo(() => {
+    return approvedProviders.find(p => p.id === selectedLeaveProviderId);
+  }, [approvedProviders, selectedLeaveProviderId]);
 
   // Scroll selected timezone into view when dialog opens
   useEffect(() => {
@@ -337,9 +356,29 @@ export default function AdminSettingsPage() {
     }
   }, [toast]);
 
+  const loadApprovedProviders = useCallback(async () => {
+    try {
+      const q = query(collection(db, "providerApplications"), where("status", "==", "approved"));
+      const snap = await getDocs(q);
+      const list = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          fullName: data.fullName || data.name || "Provider",
+          workCategoryName: data.workCategoryName || ""
+        };
+      });
+      list.sort((a, b) => a.fullName.localeCompare(b.fullName));
+      setApprovedProviders(list);
+    } catch (e) {
+      console.error("Failed to load approved providers for leaves", e);
+    }
+  }, []);
+
   useEffect(() => {
     loadLeavesFromFirestore();
-  }, [loadLeavesFromFirestore]);
+    loadApprovedProviders();
+  }, [loadLeavesFromFirestore, loadApprovedProviders]);
 
   const handleEditLeaveClick = (leave: any) => {
     setEditingLeaveId(leave.id);
@@ -347,6 +386,13 @@ export default function AdminSettingsPage() {
     setLeaveEndDate(leave.endDate);
     setLeaveType(leave.leaveType);
     setLeaveReason(leave.reason || "");
+    if (leave.providerId) {
+      setLeaveScope('provider');
+      setSelectedLeaveProviderId(leave.providerId);
+    } else {
+      setLeaveScope('platform');
+      setSelectedLeaveProviderId("");
+    }
     if (leave.leaveType === "partial_day") {
       setLeaveStartTime(leave.startTime || "09:00");
       setLeaveEndTime(leave.endTime || "17:00");
@@ -354,6 +400,8 @@ export default function AdminSettingsPage() {
       setLeaveStartTime("09:00");
       setLeaveEndTime("17:00");
     }
+    setProviderSearch("");
+    setIsProviderPickerOpen(false);
     setIsAddLeaveDialogOpen(true);
   };
 
@@ -370,16 +418,29 @@ export default function AdminSettingsPage() {
       toast({ title: "Invalid Time Range", description: "End Time must be after Start Time.", variant: "destructive" });
       return;
     }
+    if (leaveScope === 'provider' && !selectedLeaveProviderId) {
+      toast({ title: "Provider Required", description: "Please select a provider for this leave.", variant: "destructive" });
+      return;
+    }
 
     setIsSavingLeave(true);
     try {
+      const selectedProvider = leaveScope === 'provider' ? approvedProviders.find(p => p.id === selectedLeaveProviderId) : null;
+
       const leaveData: any = {
         startDate: leaveStartDate,
         endDate: leaveEndDate,
         leaveType,
-        reason: leaveReason || "Scheduled Provider Leave / Holiday",
+        reason: leaveReason || (leaveScope === 'provider' ? `Leave for ${selectedProvider?.fullName || 'Provider'}` : "Scheduled Platform Holiday"),
         createdAt: Timestamp.now()
       };
+      if (leaveScope === 'provider' && selectedLeaveProviderId) {
+        leaveData.providerId = selectedLeaveProviderId;
+        leaveData.providerName = selectedProvider?.fullName || "Provider";
+      } else {
+        leaveData.providerId = null;
+        leaveData.providerName = null;
+      }
       if (leaveType === "partial_day") {
         leaveData.startTime = leaveStartTime;
         leaveData.endTime = leaveEndTime;
@@ -402,6 +463,10 @@ export default function AdminSettingsPage() {
       setLeaveStartTime("09:00");
       setLeaveEndTime("17:00");
       setLeaveReason("");
+      setLeaveScope('platform');
+      setSelectedLeaveProviderId("");
+      setProviderSearch("");
+      setIsProviderPickerOpen(false);
       setIsAddLeaveDialogOpen(false);
       
       loadLeavesFromFirestore();
@@ -737,6 +802,11 @@ export default function AdminSettingsPage() {
     });
   };
 
+  const displayedLeaves = useMemo(() => {
+    if (leavesFilterTab === 'platform') return leaves.filter(l => !l.providerId);
+    if (leavesFilterTab === 'provider') return leaves.filter(l => !!l.providerId);
+    return leaves;
+  }, [leaves, leavesFilterTab]);
 
   if (isLoadingSettings) {
     return (
@@ -2028,28 +2098,17 @@ export default function AdminSettingsPage() {
 
         <TabsContent value="leaves">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4">
               <div>
                 <CardTitle>Leaves & Holidays</CardTitle>
-                <CardDescription>Configure leaves and holidays to block service bookings during specific periods.</CardDescription>
+                <CardDescription>
+                  Configure platform-wide holidays or individual provider leaves to manage booking availability.
+                </CardDescription>
               </div>
-              <Dialog open={isAddLeaveDialogOpen} onOpenChange={(open) => {
-                setIsAddLeaveDialogOpen(open);
-                if (!open) {
-                  setEditingLeaveId(null);
-                  setLeaveStartDate("");
-                  setLeaveEndDate("");
-                  setLeaveType("full_day");
-                  setLeaveStartTime("09:00");
-                  setLeaveEndTime("17:00");
-                  setLeaveReason("");
-                }
-              }}>
-                <Button 
-                  type="button" 
-                  size="sm" 
-                  className="h-9"
-                  onClick={() => {
+              <div className="flex items-center gap-2">
+                <Dialog open={isAddLeaveDialogOpen} onOpenChange={(open) => {
+                  setIsAddLeaveDialogOpen(open);
+                  if (!open) {
                     setEditingLeaveId(null);
                     setLeaveStartDate("");
                     setLeaveEndDate("");
@@ -2057,157 +2116,354 @@ export default function AdminSettingsPage() {
                     setLeaveStartTime("09:00");
                     setLeaveEndTime("17:00");
                     setLeaveReason("");
-                    setIsAddLeaveDialogOpen(true);
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-2" /> Add Leave / Holiday
-                </Button>
-                <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[425px]">
-                  <DialogHeader>
-                    <DialogTitle>{editingLeaveId ? "Edit Leave / Holiday" : "Add Leave / Holiday"}</DialogTitle>
-                    <DialogDescription>
-                      {editingLeaveId ? "Modify this schedule blockout." : "Create a new schedule blockout. Bookings will be prevented during this time."}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label htmlFor="leaveStartDate">Start Date</Label>
-                        <Input
-                          id="leaveStartDate"
-                          type="date"
-                          value={leaveStartDate}
-                          onChange={(e) => setLeaveStartDate(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="leaveEndDate">End Date</Label>
-                        <Input
-                          id="leaveEndDate"
-                          type="date"
-                          value={leaveEndDate}
-                          onChange={(e) => setLeaveEndDate(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1 flex flex-col">
-                      <Label className="mb-2">Leave Type</Label>
-                      <Dialog open={isLeaveTypePickerOpen} onOpenChange={setIsLeaveTypePickerOpen}>
-                        <DialogTrigger asChild>
+                    setLeaveScope('platform');
+                    setSelectedLeaveProviderId("");
+                    setProviderSearch("");
+                    setIsProviderPickerOpen(false);
+                  }
+                }}>
+                  <Button 
+                    type="button" 
+                    size="sm" 
+                    className="h-9"
+                    onClick={() => {
+                      setEditingLeaveId(null);
+                      setLeaveStartDate("");
+                      setLeaveEndDate("");
+                      setLeaveType("full_day");
+                      setLeaveStartTime("09:00");
+                      setLeaveEndTime("17:00");
+                      setLeaveReason("");
+                      setLeaveScope('platform');
+                      setSelectedLeaveProviderId("");
+                      setProviderSearch("");
+                      setIsProviderPickerOpen(false);
+                      setIsAddLeaveDialogOpen(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-2" /> Add Leave / Holiday
+                  </Button>
+                  <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[480px]">
+                    <DialogHeader>
+                      <DialogTitle>{editingLeaveId ? "Edit Leave / Holiday" : "Add Leave / Holiday"}</DialogTitle>
+                      <DialogDescription>
+                        {editingLeaveId 
+                          ? "Modify this schedule blockout." 
+                          : "Create a platform holiday or assign time-off for a specific provider."}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-3">
+                      {/* Scope Selector */}
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Apply To</Label>
+                        <div className="grid grid-cols-2 gap-2">
                           <Button
-                            variant="outline"
-                            role="combobox"
-                            className="w-full justify-between text-left font-normal h-10"
                             type="button"
+                            variant={leaveScope === 'platform' ? 'default' : 'outline'}
+                            className={cn("h-auto py-2.5 px-3 flex flex-col items-start text-left", leaveScope === 'platform' ? "" : "border-muted-foreground/30")}
+                            onClick={() => {
+                              setLeaveScope('platform');
+                              setSelectedLeaveProviderId('');
+                            }}
                           >
-                            <span>{leaveType === 'full_day' ? 'Full Day Leave' : 'Partial Day (Custom Hours)'}</span>
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            <span className="font-semibold text-xs flex items-center gap-1.5">
+                              <Globe className="h-3.5 w-3.5" /> Entire Website
+                            </span>
+                            <span className="text-[10px] opacity-80 mt-0.5">Platform-wide closure</span>
                           </Button>
-                        </DialogTrigger>
-                        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[425px]">
-                          <DialogHeader>
-                            <DialogTitle>Select Leave Type</DialogTitle>
-                            <DialogDescription>Choose if the entire day or specific hours are blocked.</DialogDescription>
-                          </DialogHeader>
-                          <div className="py-4">
-                            <ScrollArea className="h-[150px] rounded-md border p-2">
-                              <div className="space-y-1">
-                                <Button
-                                  variant={leaveType === 'full_day' ? "secondary" : "ghost"}
-                                  className="w-full justify-start text-left h-auto py-3 px-3 relative"
-                                  onClick={() => {
-                                    setLeaveType('full_day');
-                                    setIsLeaveTypePickerOpen(false);
-                                  }}
-                                  type="button"
-                                >
-                                  <span className="font-semibold text-sm">Full Day Leave</span>
-                                  {leaveType === 'full_day' && (
-                                    <Check className="absolute right-3 top-3 h-4 w-4 text-green-500" />
-                                  )}
-                                </Button>
-                                <Button
-                                  variant={leaveType === 'partial_day' ? "secondary" : "ghost"}
-                                  className="w-full justify-start text-left h-auto py-3 px-3 relative"
-                                  onClick={() => {
-                                    setLeaveType('partial_day');
-                                    setIsLeaveTypePickerOpen(false);
-                                  }}
-                                  type="button"
-                                >
-                                  <span className="font-semibold text-sm">Partial Day (Custom Hours)</span>
-                                  {leaveType === 'partial_day' && (
-                                    <Check className="absolute right-3 top-3 h-4 w-4 text-green-500" />
-                                  )}
-                                </Button>
-                              </div>
-                            </ScrollArea>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
 
-                    {leaveType === 'partial_day' && (
-                      <div className="grid grid-cols-2 gap-3 p-3 bg-muted/40 rounded-lg border">
+                          <Button
+                            type="button"
+                            variant={leaveScope === 'provider' ? 'default' : 'outline'}
+                            className={cn("h-auto py-2.5 px-3 flex flex-col items-start text-left", leaveScope === 'provider' ? "" : "border-muted-foreground/30")}
+                            onClick={() => setLeaveScope('provider')}
+                          >
+                            <span className="font-semibold text-xs flex items-center gap-1.5">
+                              <User className="h-3.5 w-3.5" /> Specific Provider
+                            </span>
+                            <span className="text-[10px] opacity-80 mt-0.5">Blocks this provider only</span>
+                          </Button>
+                        </div>
+                      </div>
+
+                      {leaveScope === 'provider' && (
+                        <div className="space-y-1.5 flex flex-col">
+                          <Label>Select Provider</Label>
+                          <Dialog open={isProviderPickerOpen} onOpenChange={setIsProviderPickerOpen}>
+                            <DialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                className={cn(
+                                  "w-full justify-between text-left font-normal h-10",
+                                  !selectedLeaveProvider && "text-muted-foreground"
+                                )}
+                                type="button"
+                              >
+                                {selectedLeaveProvider ? (
+                                  <div className="flex items-center gap-2 truncate">
+                                    <User className="h-4 w-4 text-primary shrink-0" />
+                                    <span className="font-medium text-foreground truncate">
+                                      {selectedLeaveProvider.fullName}
+                                    </span>
+                                    {selectedLeaveProvider.workCategoryName && (
+                                      <span className="text-xs text-muted-foreground truncate">
+                                        ({selectedLeaveProvider.workCategoryName})
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 text-muted-foreground">
+                                    <SearchIcon className="h-4 w-4 shrink-0 opacity-60" />
+                                    <span>Search and select provider...</span>
+                                  </div>
+                                )}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[425px]">
+                              <DialogHeader>
+                                <DialogTitle>Select Provider</DialogTitle>
+                                <DialogDescription>
+                                  Search and select an approved provider by name or category.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4 py-3">
+                                <div className="relative">
+                                  <SearchIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                  <Input
+                                    placeholder="Type provider name or category..."
+                                    className="pl-9 h-9"
+                                    value={providerSearch}
+                                    onChange={(e) => setProviderSearch(e.target.value)}
+                                    autoFocus
+                                  />
+                                </div>
+                                <ScrollArea className="h-[250px] rounded-md border p-1">
+                                  <div className="space-y-1">
+                                    {filteredApprovedProviders.length === 0 ? (
+                                      <p className="text-center py-8 text-sm text-muted-foreground">
+                                        No providers found.
+                                      </p>
+                                    ) : (
+                                      filteredApprovedProviders.map((p) => {
+                                        const isSelected = selectedLeaveProviderId === p.id;
+                                        return (
+                                          <Button
+                                            key={p.id}
+                                            variant={isSelected ? "secondary" : "ghost"}
+                                            className="w-full justify-start text-left h-auto py-2.5 px-3 relative whitespace-normal"
+                                            onClick={() => {
+                                              setSelectedLeaveProviderId(p.id);
+                                              setIsProviderPickerOpen(false);
+                                              setProviderSearch("");
+                                            }}
+                                            type="button"
+                                          >
+                                            <div className="flex flex-col gap-0.5 pr-6 text-left">
+                                              <span className="font-semibold text-sm leading-tight">
+                                                {p.fullName}
+                                              </span>
+                                              {p.workCategoryName && (
+                                                <span className="text-xs text-muted-foreground">
+                                                  {p.workCategoryName}
+                                                </span>
+                                              )}
+                                            </div>
+                                            {isSelected && (
+                                              <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600" />
+                                            )}
+                                          </Button>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </ScrollArea>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label htmlFor="leaveStartTime">Start Time</Label>
+                          <Label htmlFor="leaveStartDate">Start Date</Label>
                           <Input
-                            id="leaveStartTime"
-                            type="time"
-                            value={leaveStartTime}
-                            onChange={(e) => setLeaveStartTime(e.target.value)}
+                            id="leaveStartDate"
+                            type="date"
+                            value={leaveStartDate}
+                            onChange={(e) => setLeaveStartDate(e.target.value)}
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label htmlFor="leaveEndTime">End Time</Label>
+                          <Label htmlFor="leaveEndDate">End Date</Label>
                           <Input
-                            id="leaveEndTime"
-                            type="time"
-                            value={leaveEndTime}
-                            onChange={(e) => setLeaveEndTime(e.target.value)}
+                            id="leaveEndDate"
+                            type="date"
+                            value={leaveEndDate}
+                            onChange={(e) => setLeaveEndDate(e.target.value)}
                           />
                         </div>
                       </div>
-                    )}
 
-                    <div className="space-y-1">
-                      <Label htmlFor="leaveReason">Reason / Holiday Name</Label>
-                      <Input
-                        id="leaveReason"
-                        placeholder="e.g. Independence Day, Annual Maintenance"
-                        value={leaveReason}
-                        onChange={(e) => setLeaveReason(e.target.value)}
-                      />
+                      <div className="space-y-1 flex flex-col">
+                        <Label className="mb-2">Leave Type</Label>
+                        <Dialog open={isLeaveTypePickerOpen} onOpenChange={setIsLeaveTypePickerOpen}>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              className="w-full justify-between text-left font-normal h-10"
+                              type="button"
+                            >
+                              <span>{leaveType === 'full_day' ? 'Full Day Leave' : 'Partial Day (Custom Hours)'}</span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[425px]">
+                            <DialogHeader>
+                              <DialogTitle>Select Leave Type</DialogTitle>
+                              <DialogDescription>Choose if the entire day or specific hours are blocked.</DialogDescription>
+                            </DialogHeader>
+                            <div className="py-4">
+                              <ScrollArea className="h-[150px] rounded-md border p-2">
+                                <div className="space-y-1">
+                                  <Button
+                                    variant={leaveType === 'full_day' ? "secondary" : "ghost"}
+                                    className="w-full justify-start text-left h-auto py-3 px-3 relative"
+                                    onClick={() => {
+                                      setLeaveType('full_day');
+                                      setIsLeaveTypePickerOpen(false);
+                                    }}
+                                    type="button"
+                                  >
+                                    <span className="font-semibold text-sm">Full Day Leave</span>
+                                    {leaveType === 'full_day' && (
+                                      <Check className="absolute right-3 top-3 h-4 w-4 text-green-500" />
+                                    )}
+                                  </Button>
+                                  <Button
+                                    variant={leaveType === 'partial_day' ? "secondary" : "ghost"}
+                                    className="w-full justify-start text-left h-auto py-3 px-3 relative"
+                                    onClick={() => {
+                                      setLeaveType('partial_day');
+                                      setIsLeaveTypePickerOpen(false);
+                                    }}
+                                    type="button"
+                                  >
+                                    <span className="font-semibold text-sm">Partial Day (Custom Hours)</span>
+                                    {leaveType === 'partial_day' && (
+                                      <Check className="absolute right-3 top-3 h-4 w-4 text-green-500" />
+                                    )}
+                                  </Button>
+                                </div>
+                              </ScrollArea>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+
+                      {leaveType === 'partial_day' && (
+                        <div className="grid grid-cols-2 gap-3 p-3 bg-muted/40 rounded-lg border">
+                          <div className="space-y-1">
+                            <Label htmlFor="leaveStartTime">Start Time</Label>
+                            <Input
+                              id="leaveStartTime"
+                              type="time"
+                              value={leaveStartTime}
+                              onChange={(e) => setLeaveStartTime(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="leaveEndTime">End Time</Label>
+                            <Input
+                              id="leaveEndTime"
+                              type="time"
+                              value={leaveEndTime}
+                              onChange={(e) => setLeaveEndTime(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <Label htmlFor="leaveReason">Reason / Description</Label>
+                        <Input
+                          id="leaveReason"
+                          placeholder={leaveScope === 'platform' ? "e.g. Independence Day, Annual Maintenance" : "e.g. Personal Leave, Medical Emergency"}
+                          value={leaveReason}
+                          onChange={(e) => setLeaveReason(e.target.value)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex justify-end gap-3 pt-3 border-t">
-                    <Button type="button" variant="outline" onClick={() => setIsAddLeaveDialogOpen(false)}>Cancel</Button>
-                    <Button type="button" onClick={handleSaveLeave} disabled={isSavingLeave}>
-                      {isSavingLeave ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                      {editingLeaveId ? "Update Leave" : "Save Leave"}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+                    <div className="flex justify-end gap-3 pt-3 border-t">
+                      <Button type="button" variant="outline" onClick={() => setIsAddLeaveDialogOpen(false)}>Cancel</Button>
+                      <Button type="button" onClick={handleSaveLeave} disabled={isSavingLeave}>
+                        {isSavingLeave ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                        {editingLeaveId ? "Update Leave" : "Save Leave"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              {/* Filter Pills */}
+              <div className="flex flex-wrap items-center gap-2 pb-2 border-b">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={leavesFilterTab === 'all' ? 'default' : 'ghost'}
+                  className="h-8 text-xs font-medium"
+                  onClick={() => setLeavesFilterTab('all')}
+                >
+                  All ({leaves.length})
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={leavesFilterTab === 'platform' ? 'default' : 'ghost'}
+                  className="h-8 text-xs font-medium flex items-center gap-1.5"
+                  onClick={() => setLeavesFilterTab('platform')}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Platform Holidays ({leaves.filter(l => !l.providerId).length})
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={leavesFilterTab === 'provider' ? 'default' : 'ghost'}
+                  className="h-8 text-xs font-medium flex items-center gap-1.5"
+                  onClick={() => setLeavesFilterTab('provider')}
+                >
+                  <User className="h-3.5 w-3.5" />
+                  Provider Time-Off ({leaves.filter(l => !!l.providerId).length})
+                </Button>
+              </div>
+
               {isLoadingLeaves ? (
                 <div className="flex flex-col items-center justify-center py-10 space-y-3">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <p className="text-sm text-muted-foreground">Loading leaves and holidays...</p>
                 </div>
-              ) : leaves.length === 0 ? (
+              ) : displayedLeaves.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed rounded-xl bg-muted/10">
                   <CalendarDays className="h-12 w-12 text-muted-foreground/40 mb-3" />
-                  <h3 className="text-base font-semibold">No leaves or holidays configured</h3>
-                  <p className="text-sm text-muted-foreground max-w-xs mt-1">Configure holidays or staff leaves to block checkout slots.</p>
+                  <h3 className="text-base font-semibold">No leaves or holidays found</h3>
+                  <p className="text-sm text-muted-foreground max-w-xs mt-1">
+                    {leavesFilterTab === 'platform' 
+                      ? "No platform-wide holidays configured." 
+                      : leavesFilterTab === 'provider' 
+                        ? "No provider-specific leaves recorded." 
+                        : "Configure platform holidays or provider leaves to block booking slots."}
+                  </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto border rounded-lg">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead className="bg-muted text-muted-foreground text-xs uppercase font-semibold">
                       <tr>
+                        <th className="p-3">Applies To</th>
                         <th className="p-3">Date Range</th>
                         <th className="p-3">Type</th>
                         <th className="p-3">Hours blocked</th>
@@ -2216,15 +2472,28 @@ export default function AdminSettingsPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {leaves.map((leave) => (
+                      {displayedLeaves.map((leave) => (
                         <tr key={leave.id} className="hover:bg-muted/20">
+                          <td className="p-3 font-medium">
+                            {leave.providerId ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
+                                <User className="h-3 w-3" />
+                                {leave.providerName || "Provider"}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+                                <Globe className="h-3 w-3" />
+                                Entire Platform
+                              </span>
+                            )}
+                          </td>
                           <td className="p-3 font-medium">
                             {leave.startDate === leave.endDate 
                               ? leave.startDate 
                               : `${leave.startDate} to ${leave.endDate}`}
                           </td>
                           <td className="p-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${leave.leaveType === 'full_day' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${leave.leaveType === 'full_day' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'}`}>
                               {leave.leaveType === 'full_day' ? 'Full Day' : 'Partial Day'}
                             </span>
                           </td>

@@ -112,8 +112,9 @@ export default function AdditionalDocTypeManager() {
       await triggerRefresh('global-cache');
       setOptions(currentOptions.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: "Document type deleted." });
-    } catch (error) {
-      toast({ title: "Error", description: "Could not delete document type.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error deleting document type:", error);
+      toast({ title: "Error", description: error?.message || "Could not delete document type.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -153,8 +154,9 @@ export default function AdditionalDocTypeManager() {
       setOptions(updatedOptionsArray.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: `Document type ${editingOption ? 'updated' : 'added'}.` });
       setIsFormOpen(false);
-    } catch (error) {
-      toast({ title: "Error", description: `Could not save document type.`, variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error saving document type:", error);
+      toast({ title: "Error", description: error?.message || `Could not save document type.`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

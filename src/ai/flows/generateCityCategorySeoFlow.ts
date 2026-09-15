@@ -10,6 +10,7 @@ import { z } from 'genkit';
 import {
   cleanSeoString,
   truncateSeoString,
+  stripBrandSuffix,
 } from '@/lib/seoAdvancedUtils';
 
 const GenerateCityCategorySeoInputSchema =
@@ -153,25 +154,27 @@ Examples:
 
 2. meta_title
 Rules:
-- Under 60 characters
-- Natural
-- Search optimized
+- Strictly 35 to 48 characters
+- NEVER include brand/company name (e.g. Yourbrand, Fixbro). The website template automatically appends it.
+- Format: "{{categoryName}} in {{cityName}} | Near Me" or "{{categoryName}} Services in {{cityName}}"
+- Natural, search optimized
 
 Examples:
-"Carpenter Near Me in Bangalore"
-"Electrician Services in Bangalore"
+"Carpenter in Bangalore | Near Me"
+"Plumber in Bangalore | Pipe Repair Near Me"
 
 3. meta_description
 Rules:
-- Under 160 characters
+- Strictly under 155 characters
 - Mention:
-  - city name
-  - trusted experts
-  - category service
-  - near you intent
+  - "{{categoryName}} in {{cityName}} near you"
+  - trusted verified experts
+  - upfront pricing & same-day visit
+  - call to action: "Book online now!"
+- NEVER include company name (template appends it).
 
 Example:
-"Book trusted carpenter services in Bangalore with Yourbrand experts near you for repair, installation, and furniture work."
+"Book trusted carpenter in Bangalore near you. Doorstep furniture repair, assembly & woodwork by verified experts. Upfront rates. Book online now!"
 
 4. meta_keywords
 Rules:
@@ -201,7 +204,7 @@ Rules:
   - <br>
 
 - Mention:
-  - major Bangalore areas
+  - major {{cityName}} areas
   - service quality
   - verified experts
   - same day service
@@ -209,19 +212,14 @@ Rules:
   - customer trust
 
 - Content must feel human written.
-
 - Avoid robotic repetition.
 
 6. faqs
 Rules:
 - Generate 5 FAQs
 - Highly local SEO focused
-- Mention Bangalore areas naturally
+- Mention {{cityName}} areas naturally
 - Questions should match real Google searches
-
-Examples:
-"Do you provide carpenter services in Whitefield?"
-"Can I book electrician services near me in HSR Layout?"
 
 7. imageHint: Keywords for finding a relevant high-quality image.
 
@@ -252,16 +250,16 @@ const generateCityCategorySeoFlow =
         );
       }
 
+      const cleanTitle = stripBrandSuffix(cleanSeoString(output.meta_title));
+
       return {
         h1_title: cleanSeoString(
           output.h1_title
         ),
 
         meta_title: truncateSeoString(
-          cleanSeoString(
-            output.meta_title
-          ),
-          60
+          cleanTitle,
+          48
         ),
 
         meta_description:
@@ -269,7 +267,7 @@ const generateCityCategorySeoFlow =
             cleanSeoString(
               output.meta_description
             ),
-            160
+            155
           ),
 
         meta_keywords:

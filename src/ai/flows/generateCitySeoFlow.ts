@@ -10,6 +10,7 @@ import { z } from 'genkit';
 import {
   cleanSeoString,
   truncateSeoString,
+  stripBrandSuffix,
 } from '@/lib/seoAdvancedUtils';
 
 const GenerateCitySeoInputSchema = z.object({
@@ -116,24 +117,24 @@ Format:
 
 2. seo_title
 Rules:
-- Under 60 characters
-- Natural
-- Search optimized
-
-Example:
-"Carpenter Near Me in Bangalore"
+- Strictly 35 to 48 characters
+- NEVER include brand/company name (e.g. Yourbrand, Fixbro). The website template automatically appends it.
+- Format: "Home Services in {{cityName}} | Near Me" or "Carpenter, Plumber in {{cityName}}"
+- Natural, search optimized
 
 3. seo_description
 Rules:
-- Under 160 characters
+- Strictly under 155 characters
 - Mention:
-  - city name
-  - trusted experts
-  - carpenter/plumber/electrician
-  - tv installation
+  - "Home services in {{cityName}} near you"
+  - trusted verified experts
+  - electrician, plumber, carpenter
+  - upfront pricing & same-day visit
+  - call to action: "Book online now!"
+- NEVER include company name (template appends it).
 
 Example:
-"Book trusted carpenter, plumber, electrician & TV installation services in Bangalore by Yourbrand experts near you."
+"Book trusted home services in Bangalore near you. Verified carpenter, plumber & electrician doorstep visit with upfront pricing. Book online now!"
 
 4. seo_keywords
 Rules:
@@ -175,19 +176,21 @@ const generateCitySeoFlow = ai.defineFlow(
       );
     }
 
+    const cleanTitle = stripBrandSuffix(cleanSeoString(output.seo_title));
+
     return {
       h1_title: cleanSeoString(
         output.h1_title
       ),
 
       seo_title: truncateSeoString(
-        cleanSeoString(output.seo_title),
-        60
+        cleanTitle,
+        48
       ),
 
       seo_description: truncateSeoString(
         cleanSeoString(output.seo_description),
-        160
+        155
       ),
 
       seo_keywords: cleanSeoString(

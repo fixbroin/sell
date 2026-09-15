@@ -90,8 +90,9 @@ export default function OptionalDocTypeManager() {
       await triggerRefresh('global-cache');
       setOptions(currentOptions.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: "Optional document type deleted." });
-    } catch (error) {
-      toast({ title: "Error", description: "Could not delete optional document type.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error deleting optional document type:", error);
+      toast({ title: "Error", description: error?.message || "Could not delete optional document type.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -122,8 +123,9 @@ export default function OptionalDocTypeManager() {
       setOptions(updatedOptionsArray.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: `Optional document type ${editingOption ? 'updated' : 'added'}.` });
       setIsFormOpen(false);
-    } catch (error) {
-      toast({ title: "Error", description: `Could not save optional document type.`, variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error saving optional document type:", error);
+      toast({ title: "Error", description: error?.message || `Could not save optional document type.`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

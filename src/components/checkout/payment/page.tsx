@@ -13,7 +13,7 @@ import CheckoutStepper from '@/components/checkout/CheckoutStepper';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getCartEntries, type CartEntry } from '@/lib/cartManager';
 import { db, auth } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, Timestamp, addDoc } from '@/lib/mysqlDb';
+import { doc, getDoc, collection, query, where, getDocs, Timestamp, addDoc, deleteDoc } from '@/lib/mysqlDb';
 import type { FirestoreService, FirestoreUser, FirestorePromoCode, AppSettings, PlatformFeeSetting, AppliedPlatformFeeItem, PriceVariant } from '@/types/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -476,13 +476,109 @@ export default function PaymentPage() {
   const handleRemovePromoCode = (silent = false) => { setAppliedPromoCode(null); setPromoCodeInput(""); localStorage.removeItem('yourbrandAppliedPromoCode'); if(!silent) toast({ title: "Promo Removed", description: "Discount has been removed." }); };
   const handleSelectAvailablePromo = (code: string) => setPromoCodeInput(code);
 
+  const createPendingBooking = async () => {
+    const newBookingId = generateBookingId();
+    let customerEmail = "";
+    let customerName = "Guest User", customerPhone = "N/A", addressLine1 = "N/A", addressLine2: string | undefined, city = "N/A", state = "N/A", pincode = "N/A";
+    let latitude: number | undefined, longitude: number | undefined;
+    let bookingDiscountCode: string | undefined, bookingDiscountAmount: number | undefined, appliedPromoCodeId: string | undefined;
+    let storedAppliedPlatformFees: AppliedPlatformFeeItem[] = [];
+    let currentCategoryId: string | null = null;
+    let storedInterveningBreaks: any[] = [];
+    let storedDailyTimeline: any[] = [];
+
+    if (typeof window !== 'undefined') {
+      const storedEmail = localStorage.getItem('yourbrandCustomerEmail');
+      customerEmail = (storedEmail && storedEmail.trim()) ? storedEmail : (currentUser?.email || "");
+      currentCategoryId = localStorage.getItem('yourbrandActiveCheckoutCategory');
+      const breaksStr = localStorage.getItem('yourbrandInterveningBreaks');
+      if (breaksStr) { try { storedInterveningBreaks = JSON.parse(breaksStr); } catch (e) {} }
+      const dailyTimelineStr = localStorage.getItem('yourbrandDailyTimeline');
+      if (dailyTimelineStr) { try { storedDailyTimeline = JSON.parse(dailyTimelineStr); } catch (e) {} }
+      bookingDiscountCode = localStorage.getItem('yourbrandBookingDiscountCode') || undefined;
+      const discountAmountStr = localStorage.getItem('yourbrandBookingDiscountAmount');
+      bookingDiscountAmount = discountAmountStr ? parseFloat(discountAmountStr) : undefined;
+      appliedPromoCodeId = localStorage.getItem('yourbrandAppliedPromoCodeId') || undefined;
+      const platformFeesStr = localStorage.getItem('yourbrandAppliedPlatformFees');
+      if (platformFeesStr) { try { storedAppliedPlatformFees = JSON.parse(platformFeesStr); } catch (e) {} }
+      const addressDataString = localStorage.getItem('yourbrandCustomerAddress');
+      if (addressDataString) { 
+        const addressData = JSON.parse(addressDataString); 
+        customerName = addressData.fullName || currentUser?.displayName || customerName; 
+        customerPhone = addressData.phone || (currentUser as any)?.phoneNumber || customerPhone; 
+        customerEmail = addressData.email || currentUser?.email || customerEmail; 
+        addressLine1 = addressData.addressLine1 || addressLine1; 
+        addressLine2 = addressData.addressLine2 || undefined; 
+        city = addressData.city || city; 
+        state = addressData.state || state; 
+        pincode = addressData.pincode || pincode; 
+        latitude = addressData.latitude === null ? undefined : addressData.latitude; 
+        longitude = addressData.longitude === null ? undefined : addressData.longitude; 
+      } else if (currentUser) {
+        customerName = currentUser.displayName || customerName;
+        customerEmail = currentUser.email || customerEmail;
+        customerPhone = (currentUser as any)?.phoneNumber || customerPhone;
+      }
+    }
+
+    const bookingServices = cartEntries.map(entry => {
+      const detail = serviceDetailsMap[entry.serviceId];
+      if (!detail) return null;
+      const displayedPriceForQuantity = calculateIncrementalTotalPriceForItem(detail, entry.quantity);
+      const itemTaxRate = (detail.taxPercent || 0) > 0 ? (detail.taxPercent || 0) : 0;
+      const basePriceForQuantity = getBasePrice(displayedPriceForQuantity, detail.isTaxInclusive === true, itemTaxRate);
+      const taxAmountForItem = basePriceForQuantity * (itemTaxRate / 100);
+
+      return {
+        serviceId: entry.serviceId,
+        name: detail.name,
+        quantity: entry.quantity,
+        pricePerUnit: displayedPriceForQuantity / entry.quantity,
+        discountedPricePerUnit: detail.discountedPrice || null,
+        isTaxInclusive: detail.isTaxInclusive === true,
+        taxPercentApplied: itemTaxRate,
+        taxAmountForItem: taxAmountForItem,
+        imageUrl: detail.imageUrl || null
+      };
+    }).filter(Boolean);
+
+    const newBookingData = {
+      bookingId: newBookingId,
+      bookingNumber: 0,
+      ...(currentUser?.uid && { userId: currentUser.uid }),
+      customerName, customerEmail, customerPhone, addressLine1, ...(addressLine2 && { addressLine2 }), city, state, pincode,
+      ...(latitude !== undefined && { latitude }), ...(longitude !== undefined && { longitude }),
+      scheduledDate: localStorage.getItem('yourbrandScheduledDate') || "",
+      scheduledTimeSlot: localStorage.getItem('yourbrandScheduledTimeSlot') || "",
+      estimatedEndTime: localStorage.getItem('yourbrandEstimatedEndTime') || null,
+      interveningBreaks: storedInterveningBreaks,
+      dailyTimeline: storedDailyTimeline,
+      services: bookingServices,
+      subTotal: subTotal,
+      ...(visitingCharge > 0 && { visitingCharge: visitingCharge }),
+      taxAmount: taxAmount,
+      totalAmount: totalAmountDue,
+      platformFeeTotal: totalPlatformFeeBaseAmount + totalTaxOnPlatformFees,
+      ...(bookingDiscountCode !== undefined && { discountCode: bookingDiscountCode }),
+      ...(bookingDiscountAmount !== undefined && { discountAmount: bookingDiscountAmount }),
+      ...(calculatedPlatformFees.length > 0 && { appliedPlatformFees: calculatedPlatformFees }),
+      paymentMethod: 'Online',
+      status: 'Pending Payment',
+      createdAt: Timestamp.now(),
+      isReviewedByCustomer: false,
+      workCategoryId: currentCategoryId || undefined,
+    };
+
+    const docRef = await addDoc(collection(db, "bookings"), newBookingData);
+    return { docRef, newBookingId, customerName, customerEmail, customerPhone };
+  };
+
   const loadRazorpayScript = () => new Promise((resolve) => { if (window.Razorpay) { resolve(true); return; } const script = document.createElement('script'); script.src = 'https://checkout.razorpay.com/v1/checkout.js'; script.onload = () => resolve(true); script.onerror = () => resolve(false); document.body.appendChild(script); });
 
   const handleRazorpayCheckout = async () => {
     setIsProcessingPayment(true);
     showLoading();
 
-    // Check if in WebView, if so, trigger native payment
     if (isWebView()) {
         const paymentDetails = {
             amount: Math.round(totalAmountDue * 100),
@@ -513,6 +609,34 @@ export default function PaymentPage() {
       };
       const currencyDecimals = getCurrencySubunitDecimals(currencyCode);
 
+      let pendingBookingDocId: string | null = null;
+      let customerNameForPrefill = "Guest";
+      let customerEmailForPrefill = "guest@example.com";
+      let customerContactForPrefill: string | undefined = undefined;
+
+      if (!isCancellationFeeMode) {
+        const { docRef, customerName, customerEmail, customerPhone } = await createPendingBooking();
+        pendingBookingDocId = docRef.id;
+        customerNameForPrefill = customerName;
+        customerEmailForPrefill = customerEmail;
+        customerContactForPrefill = customerPhone !== 'N/A' ? customerPhone : undefined;
+      } else {
+        const customerAddressDataString = localStorage.getItem('yourbrandCustomerAddress');
+        if (customerAddressDataString) { 
+          try { 
+            const addr = JSON.parse(customerAddressDataString); 
+            customerNameForPrefill = addr.fullName || customerNameForPrefill; 
+            customerEmailForPrefill = addr.email || customerEmailForPrefill; 
+            customerContactForPrefill = addr.phone || undefined; 
+          } catch (e) { 
+            console.error("Error parsing address for Razorpay:", e); 
+          } 
+        } else if (auth.currentUser) { 
+          customerNameForPrefill = auth.currentUser.displayName || customerNameForPrefill; 
+          customerEmailForPrefill = auth.currentUser.email || customerEmailForPrefill; 
+        }
+      }
+
       const orderCreationResponse = await fetch('/api/razorpay/create-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -523,31 +647,22 @@ export default function PaymentPage() {
                 type: 'cancellation_fee',
                 bookingId: cancellationFeeDetails.bookingId,
                 amount: cancellationFeeDetails.feeAmount.toString()
-              } : undefined
+              } : {
+                type: 'booking',
+                bookingId: pendingBookingDocId,
+                amount: totalAmountDue.toString()
+              }
           }),
       });
 
       if (!orderCreationResponse.ok) {
+        if (pendingBookingDocId) {
+          try { await deleteDoc(doc(db, 'bookings', pendingBookingDocId)); } catch (e) {}
+        }
         const errorResult = await orderCreationResponse.json();
         throw new Error(errorResult.error || 'Failed to create Razorpay order.');
       }
       const orderDetails = await orderCreationResponse.json();
-
-      const customerAddressDataString = localStorage.getItem('yourbrandCustomerAddress');
-      let customerName = "Guest", customerEmail = "guest@example.com", customerContact = undefined;
-      if (customerAddressDataString) { 
-        try { 
-          const addr = JSON.parse(customerAddressDataString); 
-          customerName = addr.fullName || customerName; 
-          customerEmail = addr.email || customerEmail; 
-          customerContact = addr.phone || undefined; 
-        } catch (e) { 
-          console.error("Error parsing address for Razorpay:", e); 
-        } 
-      } else if (auth.currentUser) { 
-        customerName = auth.currentUser.displayName || customerName; 
-        customerEmail = auth.currentUser.email || customerEmail; 
-      }
 
       const paymentDescription = isCancellationFeeMode && cancellationFeeDetails?.humanReadableBookingId ? `Cancellation Fee for Booking ${cancellationFeeDetails.humanReadableBookingId}` : "Service Booking Payment";
 
@@ -572,6 +687,7 @@ export default function PaymentPage() {
             localStorage.removeItem('yourbrandBookingDiscountCode');
             localStorage.removeItem('yourbrandBookingDiscountAmount');
             localStorage.removeItem('yourbrandAppliedPromoCodeId');
+            router.push('/checkout/thank-you');
           } else {
              localStorage.removeItem('isProcessingCancellationFee');
              if (appliedPromoCode) {
@@ -579,24 +695,52 @@ export default function PaymentPage() {
               localStorage.setItem('yourbrandBookingDiscountAmount', appliedPromoCode.calculatedDiscount.toString());
               localStorage.setItem('yourbrandAppliedPromoCodeId', appliedPromoCode.id);
             }
+            if (calculatedPlatformFees.length > 0) localStorage.setItem('yourbrandAppliedPlatformFees', JSON.stringify(calculatedPlatformFees)); else localStorage.removeItem('yourbrandAppliedPlatformFees');
+            router.push(`/checkout/thank-you?payment_method=razorpay&bookingId=${pendingBookingDocId}`);
           }
-          if (calculatedPlatformFees.length > 0) localStorage.setItem('yourbrandAppliedPlatformFees', JSON.stringify(calculatedPlatformFees)); else localStorage.removeItem('yourbrandAppliedPlatformFees');
-          router.push('/checkout/thank-you');
         },
-        prefill: { name: customerName, email: customerEmail, contact: customerContact },
+        prefill: { name: customerNameForPrefill, email: customerEmailForPrefill, contact: customerContactForPrefill },
         notes: { 
           address: isCancellationFeeMode ? "Cancellation Fee" : `${globalSettings?.websiteName || "Yourbrand"} Service Booking`, 
           ...(isCancellationFeeMode && cancellationFeeDetails && {booking_id_cancelled: cancellationFeeDetails.humanReadableBookingId || cancellationFeeDetails.bookingId}), 
+          ...(!isCancellationFeeMode && pendingBookingDocId && {type: 'booking', bookingId: pendingBookingDocId}),
           ...(!isCancellationFeeMode && {cart_item_count: cartEntries.length.toString(), applied_promo_code: appliedPromoCode?.code || "N/A"}) 
         },
         theme: { color: "#45A0A2" },
-        modal: { ondismiss: () => { setIsProcessingPayment(false); hideLoading(); }}
+        modal: { 
+          ondismiss: async () => { 
+            setIsProcessingPayment(false); 
+            hideLoading(); 
+            if (pendingBookingDocId) {
+              try {
+                const bRef = doc(db, 'bookings', pendingBookingDocId);
+                const bSnap = await getDoc(bRef);
+                if (bSnap.exists() && bSnap.data()?.status === 'Pending Payment') {
+                  await deleteDoc(bRef);
+                }
+              } catch (e) {
+                console.error("Error cleaning up dismissed booking:", e);
+              }
+            }
+          }
+        }
       };
       const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', (response: any) => { 
+      rzp.on('payment.failed', async (response: any) => { 
         toast({ title: "Payment Failed", description: response.error.description || "An error occurred.", variant: "destructive" }); 
         setIsProcessingPayment(false); 
         hideLoading(); 
+        if (pendingBookingDocId) {
+          try {
+            const bRef = doc(db, 'bookings', pendingBookingDocId);
+            const bSnap = await getDoc(bRef);
+            if (bSnap.exists() && bSnap.data()?.status === 'Pending Payment') {
+              await deleteDoc(bRef);
+            }
+          } catch (e) {
+            console.error("Error cleaning up failed booking:", e);
+          }
+        }
       });
       rzp.open();
     } catch (error) { 
@@ -643,84 +787,7 @@ export default function PaymentPage() {
         return;
       }
 
-      const newBookingId = generateBookingId();
-      let customerEmail = "";
-      let customerName = "Guest User", customerPhone = "N/A", addressLine1 = "N/A", addressLine2: string | undefined, city = "N/A", state = "N/A", pincode = "N/A";
-      let latitude: number | undefined, longitude: number | undefined;
-      let bookingDiscountCode: string | undefined, bookingDiscountAmount: number | undefined, appliedPromoCodeId: string | undefined;
-      let storedAppliedPlatformFees: AppliedPlatformFeeItem[] = [];
-      let estimatedEndTime: string | undefined;
-      let currentCategoryId: string | null = null;
-      let storedInterveningBreaks: any[] = [];
-      let storedDailyTimeline: any[] = [];
-
-      if (typeof window !== 'undefined') {
-        const storedEmail = localStorage.getItem('yourbrandCustomerEmail');
-        customerEmail = (storedEmail && storedEmail.trim()) ? storedEmail : (currentUser?.email || "");
-        currentCategoryId = localStorage.getItem('yourbrandActiveCheckoutCategory');
-        const breaksStr = localStorage.getItem('yourbrandInterveningBreaks');
-        if (breaksStr) { try { storedInterveningBreaks = JSON.parse(breaksStr); } catch (e) {} }
-        const dailyTimelineStr = localStorage.getItem('yourbrandDailyTimeline');
-        if (dailyTimelineStr) { try { storedDailyTimeline = JSON.parse(dailyTimelineStr); } catch (e) {} }
-        bookingDiscountCode = localStorage.getItem('yourbrandBookingDiscountCode') || undefined;
-        const discountAmountStr = localStorage.getItem('yourbrandBookingDiscountAmount');
-        bookingDiscountAmount = discountAmountStr ? parseFloat(discountAmountStr) : undefined;
-        appliedPromoCodeId = localStorage.getItem('yourbrandAppliedPromoCodeId') || undefined;
-        const platformFeesStr = localStorage.getItem('yourbrandAppliedPlatformFees');
-        if (platformFeesStr) { try { storedAppliedPlatformFees = JSON.parse(platformFeesStr); } catch (e) {} }
-        const addressDataString = localStorage.getItem('yourbrandCustomerAddress');
-        if (addressDataString) { const addressData = JSON.parse(addressDataString); customerName = addressData.fullName || customerName; customerPhone = addressData.phone || customerPhone; customerEmail = addressData.email || customerEmail; addressLine1 = addressData.addressLine1 || addressLine1; addressLine2 = addressData.addressLine2 || undefined; city = addressData.city || city; state = addressData.state || state; pincode = addressData.pincode || pincode; latitude = addressData.latitude === null ? undefined : addressData.latitude; longitude = addressData.longitude === null ? undefined : addressData.longitude; }
-      }
-
-      const bookingServices = cartEntries.map(entry => {
-        const detail = serviceDetailsMap[entry.serviceId];
-        if (!detail) return null;
-        const displayedPriceForQuantity = calculateIncrementalTotalPriceForItem(detail, entry.quantity);
-        const itemTaxRate = (detail.taxPercent || 0) > 0 ? (detail.taxPercent || 0) : 0;
-        const basePriceForQuantity = getBasePrice(displayedPriceForQuantity, detail.isTaxInclusive === true, itemTaxRate);
-        const taxAmountForItem = basePriceForQuantity * (itemTaxRate / 100);
-
-        return {
-          serviceId: entry.serviceId,
-          name: detail.name,
-          quantity: entry.quantity,
-          pricePerUnit: displayedPriceForQuantity / entry.quantity,
-          discountedPricePerUnit: detail.discountedPrice || null,
-          isTaxInclusive: detail.isTaxInclusive === true,
-          taxPercentApplied: itemTaxRate,
-          taxAmountForItem: taxAmountForItem,
-          imageUrl: detail.imageUrl || null
-        };
-      }).filter(Boolean);
-
-      const newBookingData = {
-        bookingId: newBookingId,
-        bookingNumber: 0,
-        ...(currentUser?.uid && { userId: currentUser.uid }),
-        customerName, customerEmail, customerPhone, addressLine1, ...(addressLine2 && { addressLine2 }), city, state, pincode,
-        ...(latitude !== undefined && { latitude }), ...(longitude !== undefined && { longitude }),
-        scheduledDate: localStorage.getItem('yourbrandScheduledDate') || "",
-        scheduledTimeSlot: localStorage.getItem('yourbrandScheduledTimeSlot') || "",
-        estimatedEndTime: localStorage.getItem('yourbrandEstimatedEndTime') || null,
-        interveningBreaks: storedInterveningBreaks,
-        dailyTimeline: storedDailyTimeline,
-        services: bookingServices,
-        subTotal: subTotal,
-        ...(visitingCharge > 0 && { visitingCharge: visitingCharge }),
-        taxAmount: taxAmount,
-        totalAmount: totalAmountDue,
-        platformFeeTotal: totalPlatformFeeBaseAmount + totalTaxOnPlatformFees,
-        ...(bookingDiscountCode !== undefined && { discountCode: bookingDiscountCode }),
-        ...(bookingDiscountAmount !== undefined && { discountAmount: bookingDiscountAmount }),
-        ...(calculatedPlatformFees.length > 0 && { appliedPlatformFees: calculatedPlatformFees }),
-        paymentMethod: 'Online',
-        status: 'Pending Payment',
-        createdAt: Timestamp.now(),
-        isReviewedByCustomer: false,
-        workCategoryId: currentCategoryId || undefined,
-      };
-
-      const docRef = await addDoc(collection(db, "bookings"), newBookingData);
+      const { docRef } = await createPendingBooking();
 
       const res = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
@@ -736,6 +803,7 @@ export default function PaymentPage() {
       });
 
       if (!res.ok) {
+        try { await deleteDoc(doc(db, 'bookings', docRef.id)); } catch (e) {}
         const err = await res.json();
         throw new Error(err.error || 'Failed to initiate Stripe checkout.');
       }

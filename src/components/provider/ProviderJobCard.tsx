@@ -10,7 +10,7 @@ import type { FirestoreBooking } from '@/types/firestore';
 import { Badge } from '@/components/ui/badge';
 import { useLoading } from '@/contexts/LoadingContext';
 import AppImage from '@/components/ui/AppImage';
-import { formatDateInTimezone, formatTimeInTimezone, cn } from '@/lib/utils';
+import { formatDateInTimezone, formatTimeInTimezone, cn, isCashPayment } from '@/lib/utils';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 
 interface ProviderJobCardProps {
@@ -98,8 +98,8 @@ const ProviderJobCard: React.FC<ProviderJobCardProps> = ({
     return feeVal;
   };
 
-  const paymentMethod = job.paymentMethod || 'Cash';
-  const isCash = paymentMethod.toLowerCase() === 'pay after service';
+  const paymentMethod = job.paymentMethod || 'Pay After Service';
+  const isCash = isCashPayment(paymentMethod);
   const providerGross = (job.subTotal || 0) + (job.visitingCharge || 0) - (job.discountAmount || 0);
   const requiredCommission = isCash ? (getCommission(providerGross, providerFeeType, providerFeeValue) + (job.platformFeeTotal || 0) + (job.taxAmount || 0)) : 0;
   const isLowBalance = (type === 'new' || job.status === 'AssignedToProvider') && 
@@ -107,7 +107,8 @@ const ProviderJobCard: React.FC<ProviderJobCardProps> = ({
   const isAccepted = job.status !== 'AssignedToProvider' && job.status !== 'Rescheduled';
   const decimals = appConfig?.currencyDecimalPoints !== undefined ? Number(appConfig.currencyDecimalPoints) : 2;
   const symbol = appConfig?.currencySymbol || "₹";
-  const displayTotal = isCash ? (job.totalAmount || 0) : providerGross;
+  const extraChargesTotal = (job.additionalCharges || []).reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  const displayTotal = isCash ? (job.totalAmount || 0) : (providerGross + extraChargesTotal);
 
   const handleViewDetailsClick = async (e: React.MouseEvent) => {
     if (type === 'new' && onAccept) {
@@ -201,15 +202,27 @@ const ProviderJobCard: React.FC<ProviderJobCardProps> = ({
               <span className="font-bold text-foreground">+{symbol}{(job.visitingCharge || 0).toFixed(decimals)}</span>
             </p>
           )}
+          {job.discountAmount !== undefined && job.discountAmount > 0 && (
+            <p className="text-xs text-muted-foreground flex justify-between text-emerald-600 font-semibold">
+              <span>Discount:</span>
+              <span className="font-bold">-{symbol}{job.discountAmount.toFixed(decimals)}</span>
+            </p>
+          )}
+          {extraChargesTotal > 0 && (
+            <p className="text-xs text-muted-foreground flex justify-between text-emerald-600 font-semibold">
+              <span>Extra Charges Added:</span>
+              <span className="font-bold">+{symbol}{extraChargesTotal.toFixed(decimals)}</span>
+            </p>
+          )}
           {isCash && job.platformFeeTotal !== undefined && job.platformFeeTotal > 0 && (
             <p className="text-xs text-muted-foreground flex justify-between text-amber-600">
-              <span>Platform Fee (Collect in Cash):</span>
+              <span>Platform Fee (Collect from Customer):</span>
               <span className="font-bold">+{symbol}{(job.platformFeeTotal || 0).toFixed(decimals)}</span>
             </p>
           )}
           {isCash && job.taxAmount !== undefined && job.taxAmount > 0 && (
             <p className="text-xs text-muted-foreground flex justify-between text-amber-600">
-              <span>Tax (Collect in Cash):</span>
+              <span>Tax (Collect from Customer):</span>
               <span className="font-bold">+{symbol}{(job.taxAmount || 0).toFixed(decimals)}</span>
             </p>
           )}
@@ -221,6 +234,19 @@ const ProviderJobCard: React.FC<ProviderJobCardProps> = ({
             <span>Payment Method:</span>
             <span className="font-semibold text-foreground">{paymentMethod}</span>
           </p>
+          {extraChargesTotal > 0 && (
+            <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-snug">
+              {!isCash ? (
+                <span>
+                  <strong>Online Payment:</strong> {symbol}{providerGross.toFixed(decimals)} paid online. Additional charges of <strong>{symbol}{extraChargesTotal.toFixed(decimals)}</strong> collected in cash by you.
+                </span>
+              ) : (
+                <span>
+                  <strong>Pay After Service:</strong> Total <strong>{symbol}{displayTotal.toFixed(decimals)}</strong> (including {symbol}{extraChargesTotal.toFixed(decimals)} additional charges) collected by you.
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {isLowBalance && (
@@ -259,8 +285,22 @@ const ProviderJobCard: React.FC<ProviderJobCardProps> = ({
             </Button>
             {type === 'new' && onAccept && onReject && (
               <>
-                <Button size="sm" onClick={() => onReject(job.id!)} variant="destructive" disabled={isProcessingAction} className="w-full sm:w-auto text-xs">
-                  {isProcessingAction && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin"/>} <XCircle className="mr-1 h-3.5 w-3.5"/> Reject
+                <Button 
+                  size="sm" 
+                  onClick={() => onReject(job.id!)} 
+                  variant="destructive" 
+                  disabled={isProcessingAction} 
+                  className="w-full sm:w-auto text-xs"
+                >
+                  {isProcessingAction ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> Rejecting...
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="mr-1.5 h-3.5 w-3.5"/> Reject
+                    </>
+                  )}
                 </Button>
                 <Button 
                   size="sm" 
@@ -268,20 +308,54 @@ const ProviderJobCard: React.FC<ProviderJobCardProps> = ({
                   disabled={isProcessingAction} 
                   className="w-full sm:w-auto text-xs"
                 >
-                  {isProcessingAction && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin"/>} <CheckCircle className="mr-1 h-3.5 w-3.5"/> Accept
+                  {isProcessingAction ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> Accepting...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-1.5 h-3.5 w-3.5"/> Accept
+                    </>
+                  )}
                 </Button>
               </>
             )}
           </>
         )}
         {type === 'ongoing' && job.status === 'ProviderAccepted' && onStartWork && (
-          <Button size="sm" onClick={() => onStartWork(job.id!)} disabled={isProcessingAction} className="w-full text-xs">
-            {isProcessingAction && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin"/>} <PlayCircle className="mr-1 h-3.5 w-3.5"/> Start Work
+          <Button 
+            size="sm" 
+            onClick={() => onStartWork(job.id!)} 
+            disabled={isProcessingAction} 
+            className="w-full text-xs"
+          >
+            {isProcessingAction ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> Starting Work...
+              </>
+            ) : (
+              <>
+                <PlayCircle className="mr-1.5 h-3.5 w-3.5"/> Start Work
+              </>
+            )}
           </Button>
         )}
         {type === 'ongoing' && job.status === 'InProgressByProvider' && onCompleteWork && (
-          <Button size="sm" onClick={() => onCompleteWork(job.id!)} disabled={isProcessingAction} className="w-full text-xs bg-green-600 hover:bg-green-700">
-            {isProcessingAction && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin"/>} <CheckCircle className="mr-1 h-3.5 w-3.5"/> Mark Complete
+          <Button 
+            size="sm" 
+            onClick={() => onCompleteWork(job.id!)} 
+            disabled={isProcessingAction} 
+            className="w-full text-xs bg-green-600 hover:bg-green-700"
+          >
+            {isProcessingAction ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/> Completing...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="mr-1.5 h-3.5 w-3.5"/> Mark Complete
+              </>
+            )}
           </Button>
         )}
       </CardFooter>

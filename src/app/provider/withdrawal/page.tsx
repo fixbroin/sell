@@ -24,7 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { ADMIN_EMAIL } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import { getTimestampMillis, formatDateInTimezone } from '@/lib/utils';
+import { getTimestampMillis, formatDateInTimezone, isCashPayment } from '@/lib/utils';
 import { nanoid } from 'nanoid';
 import { triggerPushNotification } from '@/lib/fcmUtils';
 
@@ -87,15 +87,6 @@ const calculateProviderFee = (bookingAmount: number, feeType?: ProviderFeeType, 
     if (feeType === 'fixed') return feeValue;
     if (feeType === 'percentage') return (bookingAmount * feeValue) / 100;
     return 0;
-};
-const isCashPayment = (method: string) => {
-    if (!method) return true;
-    const lower = method.toLowerCase();
-    return lower === 'cash' || 
-           lower === 'pay after service' || 
-           lower === 'cash on delivery' || 
-           lower === 'cod' || 
-           lower === 'offline';
 };
 
 function WithdrawalPageContent() {

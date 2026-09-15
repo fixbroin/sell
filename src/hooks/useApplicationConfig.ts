@@ -101,7 +101,7 @@ export function useApplicationConfig(initialData?: AppSettings | null): UseAppli
 
         const localVersion = parseInt(localStorage.getItem(`${CACHE_KEY}-version`) || "0");
         const cached = getCache<AppSettings>(CACHE_KEY, true);
-        const isCheckoutOrPolicy = pathname?.includes('/checkout') || pathname?.includes('/cancellation-policy') || pathname?.includes('/my-bookings');
+        const isCheckoutOrPolicy = pathname?.includes('/cart') || pathname?.includes('/checkout') || pathname?.includes('/cancellation-policy') || pathname?.includes('/my-bookings');
 
         if (cached && !isAdmin && !isCheckoutOrPolicy && remoteVersion <= localVersion) {
           setConfig(processData(cached));
@@ -126,7 +126,7 @@ export function useApplicationConfig(initialData?: AppSettings | null): UseAppli
     };
 
     fetchConfig();
-  }, [isAdmin]);
+  }, [isAdmin, pathname]);
 
   return { config, isLoading, error };
 }

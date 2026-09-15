@@ -13,7 +13,7 @@ import { replacePlaceholders } from '@/lib/seoUtils';
 
 const HumanSupportRequestEmailInputSchema = z.object({
   userName: z.string().describe("The name of the user requesting support."),
-  userEmail: z.string().email().describe("The email of the user."),
+  userEmail: z.string().describe("The email of the user."),
   userId: z.string().describe("The UID of the user."),
   lastMessage: z.string().describe("The last message sent by the user."),
   chatUrl: z.string().describe("Direct URL to the chat in the admin panel."),
@@ -129,9 +129,19 @@ const humanSupportRequestEmailFlow = ai.defineFlow(
         siteName
       };
 
-      const emailSubject = replacePlaceholders(template.subject, variables);
+      let customTitle = "Human Support Requested";
+      let emailSubject = replacePlaceholders(template.subject, variables);
+
+      if (requestDetails.lastMessage.includes('[PAYMENT DISCREPANCY ALERT]')) {
+        emailSubject = `🚨 URGENT: Payment Deducted but Booking Missing - ${requestDetails.userName}`;
+        customTitle = "🚨 Urgent Payment Discrepancy Alert";
+      } else if (requestDetails.lastMessage.includes('[USER INQUIRY ALERT]')) {
+        emailSubject = `📩 New Customer Question in Chat from ${requestDetails.userName}`;
+        customTitle = "Customer Question Received";
+      }
+
       const emailBodyContent = replacePlaceholders(template.body, variables);
-      const htmlBody = createHtmlTemplate("Human Support Requested", emailBodyContent, siteName, logoUrl);
+      const htmlBody = createHtmlTemplate(customTitle, emailBodyContent, siteName, logoUrl);
 
       const canAttemptRealEmail = smtpHost && smtpPort && smtpUser && smtpPass && senderEmail;
 

@@ -88,8 +88,9 @@ export default function QualificationManager() {
       await triggerRefresh('global-cache');
       setOptions(currentOptions.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: "Qualification option deleted." });
-    } catch (error) {
-      toast({ title: "Error", description: "Could not delete qualification option.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error deleting qualification option:", error);
+      toast({ title: "Error", description: error?.message || "Could not delete qualification option.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -117,8 +118,9 @@ export default function QualificationManager() {
       setOptions(updatedOptionsArray.sort((a,b) => a.order - b.order));
       toast({ title: "Success", description: `Qualification option ${editingOption ? 'updated' : 'added'}.` });
       setIsFormOpen(false);
-    } catch (error) {
-      toast({ title: "Error", description: `Could not save qualification option.`, variant: "destructive" });
+    } catch (error: any) {
+      console.error("Error saving qualification option:", error);
+      toast({ title: "Error", description: error?.message || `Could not save qualification option.`, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }

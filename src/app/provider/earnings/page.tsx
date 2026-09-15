@@ -1,9 +1,10 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Loader2, DollarSign, PackageSearch, HandCoins, Banknote, AlertTriangle, RefreshCw } from "lucide-react";
+import { cn, getTimestampMillis, isCashPayment } from '@/lib/utils';
 import type { FirestoreBooking, ProviderFeeType, FirestoreUser, WithdrawalRequest } from '@/types/firestore';
 import { db } from '@/lib/firebase';
 import { collection, query, where, onSnapshot, orderBy, doc, getDoc, getDocs, Timestamp } from '@/lib/mysqlDb';
@@ -21,12 +22,6 @@ const calculateProviderFee = (bookingAmount: number, feeType?: ProviderFeeType, 
     if (feeType === 'fixed') return feeValue;
     if (feeType === 'percentage') return (bookingAmount * feeValue) / 100;
     return 0;
-};
-
-const isCashPayment = (method: string) => {
-    if (!method) return false;
-    const lower = method.toLowerCase();
-    return lower === 'pay after service';
 };
 
 export default function ProviderEarningsPage() {
@@ -49,33 +44,35 @@ export default function ProviderEarningsPage() {
     // Default to zero if stats don't exist yet
     const stats = (firestoreUser?.monthlyStats?.monthKey === monthKey) 
         ? firestoreUser.monthlyStats 
-        : { gross: 0, commission: 0, cashCollected: 0, withdrawals: 0, onlineNet: 0, cashCommission: 0, cashNet: 0 };
+        : { gross: 0, commission: 0, cashCollected: 0, withdrawals: 0, onlineNet: 0, cashCommission: 0, cashNet: 0, onlineGross: 0, onlineCommission: 0, extraCharges: 0 };
 
     const currentBalance = firestoreUser?.withdrawableBalance || 0;
     
     // Carry Forward = Current Balance - (This month's net activity)
     // Net Activity = (Online Net) - (Withdrawals)
-    const netActivityThisMonth = stats.onlineNet - stats.withdrawals;
+    const netActivityThisMonth = (stats.onlineNet || 0) - (stats.withdrawals || 0);
     const balanceCarriedForward = currentBalance - netActivityThisMonth;
 
-    const cashNet = stats.cashNet || 0;
-    const cashCommission = stats.cashCommission || 0;
-    const grossCashBookings = cashNet + cashCommission;
-    const grossOnlineBookings = Math.max(0, stats.gross - grossCashBookings);
     const onlineNet = stats.onlineNet || 0;
-    const onlineCommission = Math.max(0, grossOnlineBookings - onlineNet);
+    const onlineGross = stats.onlineGross !== undefined 
+        ? stats.onlineGross 
+        : Math.max(0, (stats.gross || 0) - (stats.cashCollected || 0));
+    const onlineCommission = stats.onlineCommission !== undefined 
+        ? stats.onlineCommission 
+        : Math.max(0, onlineGross - onlineNet);
 
     return {
-        monthlyGrossEarnings: stats.gross,
-        monthlyAdminCommission: stats.commission,
-        monthlyNetEarnings: stats.gross - stats.commission,
-        monthlyCashCollected: stats.cashCollected,
-        monthlyWithdrawals: stats.withdrawals,
-        monthlyCashCommission: stats.cashCommission,
-        monthlyOnlineNet: stats.onlineNet,
-        monthlyOnlineGross: grossOnlineBookings,
+        monthlyGrossEarnings: stats.gross || 0,
+        monthlyAdminCommission: stats.commission || 0,
+        monthlyNetEarnings: (stats.gross || 0) - (stats.commission || 0),
+        monthlyCashCollected: stats.cashCollected || 0,
+        monthlyWithdrawals: stats.withdrawals || 0,
+        monthlyCashCommission: stats.cashCommission || 0,
+        monthlyOnlineNet: onlineNet,
+        monthlyOnlineGross: onlineGross,
         monthlyOnlineCommission: onlineCommission,
         monthlyCashNet: stats.cashNet || 0,
+        monthlyExtraCharges: stats.extraCharges || 0,
         balanceCarriedForward,
         lifetimePaidOut: firestoreUser?.totalPaidOut || 0,
         withdrawableBalance: currentBalance,
@@ -98,47 +95,72 @@ export default function ProviderEarningsPage() {
         
         const [bookingsSnap, withdrawalsSnap] = await Promise.all([getDocs(bookingsQuery), getDocs(withdrawalsQuery)]);
         
-        let totalNetEarnings = 0;
-        let totalCashCollected = 0;
-        const totalLifetimePaidOut = 0;
+        let totalNetOnlineEarnings = 0;
 
         // Stats for THIS month specifically
-        const mStats = { monthKey, gross: 0, commission: 0, cashCollected: 0, withdrawals: 0, onlineNet: 0, cashCommission: 0, cashNet: 0 };
+        const mStats = { 
+            monthKey, 
+            gross: 0, 
+            commission: 0, 
+            cashCollected: 0, 
+            withdrawals: 0, 
+            onlineNet: 0, 
+            cashCommission: 0, 
+            cashNet: 0,
+            onlineGross: 0,
+            onlineCommission: 0,
+            extraCharges: 0
+        };
         
         bookingsSnap.docs.forEach(d => {
             const b = d.data() as FirestoreBooking;
-            const providerGross = (b.totalAmount || 0) - (b.platformFeeTotal || 0) - (b.taxAmount || 0);
-            const commission = calculateProviderFee(providerGross, appConfig.providerFeeType, appConfig.providerFeeValue);
             const isCash = isCashPayment(b.paymentMethod);
             const bDate = b.scheduledDate || "";
 
+            const baseGross = (b.subTotal || 0) + (b.visitingCharge || 0) - (b.discountAmount || 0);
             const extraCharges = (b.additionalCharges || []).reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-            const originalAmount = providerGross - extraCharges;
+            const totalBookingGross = baseGross + extraCharges;
 
-            // All-time calculation
-            totalNetEarnings += (providerGross - commission);
             if (isCash) {
-                totalCashCollected += b.totalAmount;
-            } else {
-                totalCashCollected += extraCharges;
-            }
-
-            // Monthly calculation (if date is this month)
-            if (bDate >= startOfMonthStr) {
-                mStats.gross += providerGross;
-                mStats.commission += commission;
-                if (isCash) {
-                    mStats.cashCollected += b.totalAmount;
+                const commission = calculateProviderFee(totalBookingGross, appConfig?.providerFeeType, appConfig?.providerFeeValue);
+                const cashNet = totalBookingGross - commission;
+                if (bDate >= startOfMonthStr) {
+                    mStats.gross += totalBookingGross;
+                    mStats.commission += commission;
+                    mStats.cashCollected += (b.totalAmount || totalBookingGross);
                     mStats.cashCommission += commission;
-                    mStats.cashNet += (providerGross - commission);
-                } else {
-                    mStats.cashCollected += extraCharges;
-                    const originalCommission = calculateProviderFee(originalAmount, appConfig.providerFeeType, appConfig.providerFeeValue);
-                    const extraCommission = appConfig.providerFeeType === 'percentage' 
-                        ? calculateProviderFee(extraCharges, appConfig.providerFeeType, appConfig.providerFeeValue) 
-                        : (extraCharges * (appConfig.providerExtraFeePercentage || 0)) / 100;
-                    mStats.cashCommission += extraCommission;
-                    mStats.onlineNet += (originalAmount - originalCommission);
+                    mStats.cashNet += cashNet;
+                    if (extraCharges > 0) {
+                        mStats.extraCharges = (mStats.extraCharges || 0) + extraCharges;
+                    }
+                }
+            } else {
+                // Online Payment: baseGross was paid online, extraCharges collected in cash on-site
+                const onlineGross = baseGross;
+                const onlineCommission = calculateProviderFee(onlineGross, appConfig?.providerFeeType, appConfig?.providerFeeValue);
+                const onlineNet = onlineGross - onlineCommission;
+                
+                const extraCommission = extraCharges > 0 
+                    ? (appConfig?.providerFeeType === 'percentage' 
+                        ? calculateProviderFee(extraCharges, appConfig?.providerFeeType, appConfig?.providerFeeValue) 
+                        : (extraCharges * (appConfig?.providerExtraFeePercentage || 0)) / 100)
+                    : 0;
+
+                // Provider only withdraws online net share (FixBro holds online payment)
+                totalNetOnlineEarnings += onlineNet;
+
+                if (bDate >= startOfMonthStr) {
+                    mStats.gross += totalBookingGross;
+                    mStats.commission += (onlineCommission + extraCommission);
+                    mStats.onlineGross += onlineGross;
+                    mStats.onlineCommission += onlineCommission;
+                    mStats.onlineNet += onlineNet;
+                    if (extraCharges > 0) {
+                        mStats.cashCollected += extraCharges;
+                        mStats.cashCommission += extraCommission;
+                        mStats.cashNet += Math.max(0, extraCharges - extraCommission);
+                        mStats.extraCharges = (mStats.extraCharges || 0) + extraCharges;
+                    }
                 }
             }
         });
@@ -149,9 +171,6 @@ export default function ProviderEarningsPage() {
             .filter(req => req.status === 'completed')
             .reduce((sum, req) => sum + req.amount, 0);
 
-        // SMART SYNC: 
-        // We compare what's in the profile vs what's visible in history.
-        // If profile is higher (because records were deleted), we keep the profile value.
         const storedTotalPaidOut = firestoreUser?.totalPaidOut || 0;
         const finalTotalPaidOut = Math.max(storedTotalPaidOut, visibleCompletedPayouts);
 
@@ -159,16 +178,25 @@ export default function ProviderEarningsPage() {
             .filter(req => ['processing', 'approved', 'pending'].includes(req.status))
             .reduce((sum, req) => sum + req.amount, 0);
 
-        const realBalance = totalNetEarnings - totalCashCollected - finalTotalPaidOut - currentPendingAmount;
+        // Sum this month's withdrawals
+        const withdrawalsThisMonth = withdrawalHistory
+            .filter(req => {
+                const reqMillis = getTimestampMillis(req.requestedAt);
+                return reqMillis > 0 && reqMillis >= startOfMonth.getTime();
+            })
+            .reduce((sum, req) => sum + req.amount, 0);
+        mStats.withdrawals = withdrawalsThisMonth;
+
+        const realBalance = Math.max(0, totalNetOnlineEarnings - finalTotalPaidOut - currentPendingAmount);
 
         const userRef = doc(db, "users", providerUser.uid);
         await updateDoc(userRef, { 
-            withdrawableBalance: Math.max(0, realBalance),
+            withdrawableBalance: realBalance,
             totalPaidOut: finalTotalPaidOut,
             monthlyStats: mStats
         });
         
-        toast({ title: "Success", description: "Earnings and balance updated." });
+        toast({ title: "Success", description: "Earnings and balance synchronized." });
     } catch (error) {
         console.error("Sync error:", error);
         toast({ title: "Update Failed", variant: "destructive" });
@@ -176,6 +204,13 @@ export default function ProviderEarningsPage() {
         setIsSyncing(false);
     }
   };
+
+  const hasSyncedRef = useRef(false);
+  useEffect(() => {
+    if (!providerUser?.uid || hasSyncedRef.current) return;
+    hasSyncedRef.current = true;
+    handleSyncBalance();
+  }, [providerUser?.uid]);
 
   if (authIsLoading || isLoadingAppConfig || !firestoreUser) {
     return <div className="flex justify-center items-center h-64"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
@@ -191,7 +226,7 @@ export default function ProviderEarningsPage() {
               <CardDescription>Performance summary for {earningsData.monthName}.</CardDescription>
             </div>
             <div className="flex items-center gap-2">
-               
+                
                 <Badge variant="outline" className="px-3 py-1 bg-primary/5 text-primary border-primary/20 font-bold uppercase tracking-tighter">
                 {earningsData.monthName}
                 </Badge>
@@ -255,6 +290,13 @@ export default function ProviderEarningsPage() {
                         <span>Online Jobs Net Earnings <span className="text-[10px] text-muted-foreground ml-1">(Your share after fee)</span></span>
                         <span className="font-semibold">+ {symbol}{earningsData.monthlyOnlineNet.toFixed(decimals)}</span>
                     </div>
+
+                    {earningsData.monthlyExtraCharges > 0 && (
+                        <div className="flex justify-between items-center py-1 border-b border-dashed text-amber-600">
+                            <span>Additional Charges <span className="text-[10px] text-muted-foreground ml-1">(Collected in cash by you)</span></span>
+                            <span className="font-semibold">+ {symbol}{earningsData.monthlyExtraCharges.toFixed(decimals)}</span>
+                        </div>
+                    )}
 
                     <div className="flex justify-between items-center py-1 border-b border-dashed text-destructive">
                         <span>Payouts requested this month</span>

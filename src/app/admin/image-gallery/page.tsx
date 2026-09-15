@@ -7,18 +7,37 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Image as ImageIcon, Search, Upload, RefreshCw, Loader2, Sparkles, FolderTree, Layers, Wrench, Tv, Settings2, Eye, CheckCircle2, ChevronRight, FileText, Megaphone, Bell } from "lucide-react";
+import { Image as ImageIcon, Search, Upload, RefreshCw, Loader2, Sparkles, FolderTree, Layers, Wrench, Tv, Settings2, Eye, CheckCircle2, ChevronRight, FileText, Megaphone, Bell, Copy, Check, Trash2, ExternalLink, Share2, Plus } from "lucide-react";
 import Image from 'next/image';
 import { useToast } from "@/hooks/use-toast";
 import PermissionGuard from '@/components/admin/PermissionGuard';
 import { db, auth } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, updateDoc, setDoc } from '@/lib/mysqlDb';
+import { collection, getDocs, doc, getDoc, updateDoc, setDoc, addDoc, deleteDoc, query, orderBy, Timestamp } from '@/lib/mysqlDb';
 import { triggerRefresh } from '@/lib/revalidateUtils';
 import { compressImage } from '@/lib/imageCompressor';
 import { deleteObject } from '@/lib/mysqlStorage';
 import type { HomepageAd } from '@/types/firestore';
+
+export interface CustomGalleryImage {
+  id: string;
+  name: string;
+  imageUrl: string;
+  uploadFolder: string;
+  fileSize?: number;
+  createdAt?: any;
+}
 
 export interface GalleryItem {
   id: string; // Unique gallery item key
@@ -105,8 +124,24 @@ export default function AdminImageGalleryPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // Custom Marketing Images State
+  const [customImages, setCustomImages] = useState<CustomGalleryImage[]>([]);
+  const [isLoadingCustom, setIsLoadingCustom] = useState(false);
+  const [isUploadingCustom, setIsUploadingCustom] = useState(false);
+  const [customUploadProgress, setCustomUploadProgress] = useState(0);
+  const [copiedUrlId, setCopiedUrlId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<CustomGalleryImage | null>(null);
+  const [isDeletingCustom, setIsDeletingCustom] = useState(false);
+
   // Modal State for Full Screen Image Preview
-  const [viewingImage, setViewingImage] = useState<GalleryItem | null>(null);
+  const [viewingImage, setViewingImage] = useState<{
+    id?: string;
+    title: string;
+    imageUrl: string;
+    categoryType: string;
+    uploadFolder: string;
+    originalItem?: GalleryItem;
+  } | null>(null);
 
   const fetchAllWebsiteImages = async () => {
     setIsLoading(true);
@@ -450,9 +485,222 @@ export default function AdminImageGalleryPage() {
     }
   };
 
+  const fetchCustomImages = async () => {
+    setIsLoadingCustom(true);
+    try {
+      const snap = await getDocs(query(collection(db, "adminCustomImages"), orderBy("createdAt", "desc")));
+      const list: CustomGalleryImage[] = snap.docs.map(docSnap => {
+        const data = docSnap.data() as any;
+        return {
+          id: docSnap.id,
+          name: data.name || 'Custom Image',
+          imageUrl: data.imageUrl || data.url || '',
+          uploadFolder: data.uploadFolder || 'custom',
+          fileSize: data.fileSize || data.size,
+          createdAt: data.createdAt
+        };
+      }).filter(img => Boolean(img.imageUrl));
+      setCustomImages(list);
+    } catch (err) {
+      console.warn("Error fetching custom images:", err);
+    } finally {
+      setIsLoadingCustom(false);
+    }
+  };
+
   useEffect(() => {
     fetchAllWebsiteImages();
+    fetchCustomImages();
   }, []);
+
+  const handleCustomUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploadingCustom(true);
+    setCustomUploadProgress(10);
+
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      let completedCount = 0;
+      const totalFiles = files.length;
+      const newItems: CustomGalleryImage[] = [];
+
+      for (let i = 0; i < totalFiles; i++) {
+        const rawFile = files[i];
+        let fileToUpload = rawFile;
+        try {
+          fileToUpload = await compressImage(rawFile);
+        } catch (cErr) {
+          console.warn("Compression fallback:", cErr);
+        }
+
+        const formData = new FormData();
+        formData.append('file', fileToUpload);
+        formData.append('uploadPath', 'custom');
+
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok || !uploadData.success) {
+          throw new Error(uploadData.error || `Failed to upload ${rawFile.name}`);
+        }
+
+        const uploadedUrl = uploadData.url;
+        const newRecord = {
+          name: rawFile.name,
+          imageUrl: uploadedUrl,
+          uploadFolder: 'custom',
+          fileSize: fileToUpload.size || rawFile.size,
+          createdAt: Timestamp.now()
+        };
+
+        const docRef = await addDoc(collection(db, "adminCustomImages"), newRecord);
+        newItems.push({
+          id: docRef.id,
+          ...newRecord
+        });
+
+        completedCount++;
+        setCustomUploadProgress(Math.round((completedCount / totalFiles) * 100));
+      }
+
+      setCustomImages(prev => [...newItems, ...prev]);
+
+      toast({
+        title: "Custom Image Uploaded!",
+        description: totalFiles === 1 
+          ? `Image uploaded successfully. You can now copy the link.` 
+          : `${totalFiles} images uploaded successfully.`,
+      });
+    } catch (err: any) {
+      console.error("Custom upload error:", err);
+      toast({
+        title: "Upload Failed",
+        description: err.message || "Failed to upload image.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploadingCustom(false);
+      setCustomUploadProgress(0);
+      e.target.value = '';
+    }
+  };
+
+  const handleCopyCustomUrl = async (img: CustomGalleryImage) => {
+    try {
+      const fullUrl = img.imageUrl.startsWith('http')
+        ? img.imageUrl
+        : `${window.location.origin}${img.imageUrl.startsWith('/') ? '' : '/'}${img.imageUrl}`;
+
+      await navigator.clipboard.writeText(fullUrl);
+      setCopiedUrlId(img.id);
+      setTimeout(() => setCopiedUrlId(null), 2500);
+
+      toast({
+        title: "URL Copied to Clipboard! 📋",
+        description: fullUrl,
+      });
+    } catch (err) {
+      try {
+        const textarea = document.createElement('textarea');
+        const fullUrl = img.imageUrl.startsWith('http')
+          ? img.imageUrl
+          : `${window.location.origin}${img.imageUrl.startsWith('/') ? '' : '/'}${img.imageUrl}`;
+        textarea.value = fullUrl;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopiedUrlId(img.id);
+        setTimeout(() => setCopiedUrlId(null), 2500);
+        toast({
+          title: "URL Copied to Clipboard! 📋",
+          description: fullUrl,
+        });
+      } catch (e) {
+        toast({
+          title: "Copy Failed",
+          description: "Please manually copy the URL.",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+
+  const handleExecuteDeleteCustomImage = async () => {
+    if (!deleteCandidate) return;
+
+    setIsDeletingCustom(true);
+    try {
+      if (deleteCandidate.imageUrl) {
+        try {
+          await deleteObject(deleteCandidate.imageUrl);
+        } catch (dErr) {
+          console.warn("Storage deletion notice:", dErr);
+        }
+      }
+
+      await deleteDoc(doc(db, "adminCustomImages", deleteCandidate.id));
+      setCustomImages(prev => prev.filter(item => item.id !== deleteCandidate.id));
+
+      toast({
+        title: "Custom Image Deleted",
+        description: `"${deleteCandidate.name}" was permanently removed.`,
+      });
+      setDeleteCandidate(null);
+    } catch (err: any) {
+      console.error("Error deleting custom image:", err);
+      toast({
+        title: "Delete Error",
+        description: err.message || "Failed to delete custom image.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsDeletingCustom(false);
+    }
+  };
+
+  const filteredCustomImages = useMemo(() => {
+    if (!searchTerm.trim()) return customImages;
+    const lower = searchTerm.toLowerCase().trim();
+    return customImages.filter(img => 
+      img.name.toLowerCase().includes(lower) || 
+      img.imageUrl.toLowerCase().includes(lower)
+    );
+  }, [customImages, searchTerm]);
+
+  const formatFileSize = (bytes?: number): string => {
+    if (!bytes || isNaN(bytes)) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const formatDate = (ts: any): string => {
+    if (!ts) return '';
+    try {
+      if (ts.toDate && typeof ts.toDate === 'function') {
+        return ts.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+      if (ts.seconds) {
+        return new Date(ts.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+    } catch (e) {
+      return '';
+    }
+    return '';
+  };
 
   const filteredItems = useMemo(() => {
     let result = items;
@@ -722,7 +970,7 @@ export default function AdminImageGalleryPage() {
 
           {/* Hover Quick Actions */}
           <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2 p-4 backdrop-blur-[2px]">
-            <Button size="sm" variant="secondary" onClick={() => setViewingImage(item)} className="bg-white/90 text-slate-900 hover:bg-white text-xs">
+            <Button size="sm" variant="secondary" onClick={() => setViewingImage({ id: item.id, title: item.title, imageUrl: item.imageUrl, categoryType: item.categoryType, uploadFolder: item.uploadFolder, originalItem: item })} className="bg-white/90 text-slate-900 hover:bg-white text-xs">
               <Eye className="h-3.5 w-3.5 mr-1" /> View Full
             </Button>
             <Button size="sm" onClick={() => handleOpenUploadModal(item)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs shadow-md">
@@ -756,6 +1004,116 @@ export default function AdminImageGalleryPage() {
     </Card>
   );
 
+  const renderCustomImageCard = (item: CustomGalleryImage) => {
+    const isCopied = copiedUrlId === item.id;
+    const formattedSize = formatFileSize(item.fileSize);
+    const formattedDate = formatDate(item.createdAt);
+
+    return (
+      <Card key={item.id} className="overflow-hidden group hover:shadow-xl transition-all duration-300 border border-border/60 flex flex-col justify-between bg-card">
+        <div>
+          {/* Image Thumbnail Container */}
+          <div className="relative aspect-video w-full bg-slate-900/5 dark:bg-slate-800/50 overflow-hidden flex items-center justify-center border-b">
+            <img 
+              src={item.imageUrl} 
+              alt={item.name} 
+              className="object-contain max-h-full max-w-full p-2 group-hover:scale-105 transition-transform duration-300"
+            />
+            
+            <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+              <Badge className="text-[10px] shadow-sm bg-purple-600 text-white backdrop-blur-md border-none font-semibold">
+                Custom / Marketing
+              </Badge>
+              {formattedSize && (
+                <Badge variant="outline" className="text-[10px] shadow-sm bg-background/90 text-foreground border-border/50 backdrop-blur-md">
+                  {formattedSize}
+                </Badge>
+              )}
+            </div>
+
+            {/* Hover Quick Actions */}
+            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2 p-4 backdrop-blur-[2px]">
+              <Button 
+                size="sm" 
+                variant="secondary" 
+                onClick={() => setViewingImage({ id: item.id, title: item.name, imageUrl: item.imageUrl, categoryType: 'Custom Marketing', uploadFolder: item.uploadFolder })} 
+                className="bg-white/90 text-slate-900 hover:bg-white text-xs"
+              >
+                <Eye className="h-3.5 w-3.5 mr-1" /> View Full
+              </Button>
+              <Button 
+                size="sm" 
+                variant="secondary" 
+                onClick={() => window.open(item.imageUrl, '_blank')} 
+                className="bg-white/90 text-slate-900 hover:bg-white text-xs"
+              >
+                <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open
+              </Button>
+            </div>
+          </div>
+
+          {/* Details Container */}
+          <div className="p-4 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <h4 className="font-bold text-sm text-foreground line-clamp-1 flex-1" title={item.name}>
+                {item.name}
+              </h4>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setDeleteCandidate(item)}
+                className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                title="Delete Image"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            {formattedDate && (
+              <p className="text-[11px] text-muted-foreground">
+                Uploaded: {formattedDate}
+              </p>
+            )}
+
+            {/* Clickable URL box */}
+            <div 
+              onClick={() => handleCopyCustomUrl(item)}
+              className="p-2 rounded-lg bg-muted/60 hover:bg-muted text-[11px] font-mono text-muted-foreground truncate cursor-pointer border border-border/50 flex items-center justify-between gap-2 transition-colors"
+              title="Click to copy URL"
+            >
+              <span className="truncate">{item.imageUrl}</span>
+              {isCopied ? (
+                <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+              ) : (
+                <Copy className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Action Button: Copy URL */}
+        <div className="p-4 pt-0">
+          <Button 
+            onClick={() => handleCopyCustomUrl(item)} 
+            className="w-full text-xs font-bold transition-all shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {isCopied ? (
+              <>
+                <Check className="h-4 w-4 mr-1.5" />
+                URL Copied to Clipboard!
+              </>
+            ) : (
+              <>
+                <Copy className="h-4 w-4 mr-1.5" />
+                Copy Image URL
+              </>
+            )}
+          </Button>
+        </div>
+      </Card>
+    );
+  };
+
   return (
     <PermissionGuard moduleId="image_gallery" action="read">
       <div className="space-y-6">
@@ -776,11 +1134,11 @@ export default function AdminImageGalleryPage() {
                 </CardDescription>
               </div>
               <Button 
-                onClick={fetchAllWebsiteImages} 
-                disabled={isLoading}
+                onClick={() => { fetchAllWebsiteImages(); fetchCustomImages(); }} 
+                disabled={isLoading || isLoadingCustom}
                 className="bg-white text-emerald-800 hover:bg-emerald-50 font-bold shadow-lg shrink-0 rounded-xl"
               >
-                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || isLoadingCustom ? 'animate-spin' : ''}`} />
                 Refresh Gallery
               </Button>
             </div>
@@ -788,7 +1146,7 @@ export default function AdminImageGalleryPage() {
         </Card>
 
         {/* Stats Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card className="p-4 shadow-sm border border-border/50">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-emerald-500/10 text-emerald-600 rounded-xl">
@@ -828,8 +1186,19 @@ export default function AdminImageGalleryPage() {
                 <Tv className="h-6 w-6" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground font-medium">Banners, Popups & Blogs</p>
+                <p className="text-xs text-muted-foreground font-medium">Banners & Blogs</p>
                 <p className="text-2xl font-black">{items.filter(i => i.categoryType === 'slideshow' || i.categoryType === 'ad' || i.categoryType === 'popup' || i.categoryType === 'blog' || i.categoryType === 'branding').length}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-4 shadow-sm border border-border/50 bg-purple-50/40 dark:bg-purple-950/20">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-purple-500/10 text-purple-600 rounded-xl">
+                <Share2 className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Custom Marketing</p>
+                <p className="text-2xl font-black text-purple-700 dark:text-purple-300">{customImages.length}</p>
               </div>
             </div>
           </Card>
@@ -841,7 +1210,7 @@ export default function AdminImageGalleryPage() {
             <div className="relative w-full md:w-80">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search images by title or category..."
+                placeholder={activeTab === 'custom' ? "Search custom images by name..." : "Search images by title or category..."}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9"
@@ -859,13 +1228,122 @@ export default function AdminImageGalleryPage() {
                 <TabsTrigger value="popup" className="text-xs py-1.5 px-3">Newsletter Popups ({items.filter(i => i.categoryType === 'popup').length})</TabsTrigger>
                 <TabsTrigger value="blog" className="text-xs py-1.5 px-3">Blogs ({items.filter(i => i.categoryType === 'blog').length})</TabsTrigger>
                 <TabsTrigger value="branding" className="text-xs py-1.5 px-3">Branding</TabsTrigger>
+                <TabsTrigger value="custom" className="text-xs py-1.5 px-3 bg-purple-500/15 text-purple-800 dark:text-purple-300 data-[state=active]:bg-purple-600 data-[state=active]:text-white font-bold">
+                  Custom Images ({customImages.length})
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
         </Card>
 
         {/* Image Display Content */}
-        {isLoading ? (
+        {activeTab === 'custom' ? (
+          <div className="space-y-6">
+            {/* Informational Guidance Banner */}
+            <Card className="border-purple-500/30 bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-pink-500/10 p-5 shadow-sm">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-purple-500/20 text-purple-700 dark:text-purple-300 rounded-xl mt-0.5 sm:mt-0">
+                    <Share2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-foreground flex items-center gap-2">
+                      Marketing & Social Media Custom Images
+                      <Badge className="bg-purple-600 text-white border-none text-[10px]">Private Assets</Badge>
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-2xl leading-relaxed">
+                      Upload images here to get shareable public URLs. These images are <strong>strictly standalone</strong> and will <strong>NOT be visible anywhere on your public website</strong> (not in categories, services, slideshows, or popups). Perfect for Facebook, Instagram, WhatsApp, email marketing, or external ads.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Upload Box Card */}
+            <Card className="border border-border/70 shadow-sm overflow-hidden">
+              <CardHeader className="bg-muted/30 border-b pb-4">
+                <CardTitle className="text-base font-bold flex items-center gap-2">
+                  <Upload className="h-4 w-4 text-purple-600" />
+                  Upload New Custom Image(s)
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Choose one or multiple images from your computer. Files will be automatically optimized and hosted.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="border-2 border-dashed border-border/80 hover:border-purple-500/60 transition-colors rounded-2xl p-6 sm:p-8 text-center bg-muted/10 flex flex-col items-center justify-center gap-4">
+                  <div className="p-4 bg-purple-500/10 text-purple-600 rounded-full">
+                    <ImageIcon className="h-8 w-8" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-bold text-sm text-foreground">Drag & drop or select image files</p>
+                    <p className="text-xs text-muted-foreground">Supported: JPG, PNG, WEBP, GIF, SVG (Max 5MB each)</p>
+                  </div>
+                  <div>
+                    <input
+                      id="custom-file-upload-input"
+                      type="file"
+                      accept="image/png, image/jpeg, image/webp, image/gif, image/svg+xml"
+                      multiple
+                      onChange={handleCustomUpload}
+                      disabled={isUploadingCustom}
+                      className="hidden"
+                    />
+                    <label htmlFor="custom-file-upload-input">
+                      <Button
+                        type="button"
+                        disabled={isUploadingCustom}
+                        onClick={() => document.getElementById('custom-file-upload-input')?.click()}
+                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer"
+                      >
+                        {isUploadingCustom ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Uploading & Optimizing...
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-4 w-4 mr-2" />
+                            Select & Upload Images
+                          </>
+                        )}
+                      </Button>
+                    </label>
+                  </div>
+
+                  {isUploadingCustom && (
+                    <div className="w-full max-w-md space-y-2 mt-2">
+                      <Progress value={customUploadProgress} className="h-2" />
+                      <p className="text-xs text-center text-muted-foreground">Processing and saving images... {customUploadProgress}%</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Custom Images Grid */}
+            {isLoadingCustom ? (
+              <div className="flex flex-col items-center justify-center min-h-[250px] gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+                <p className="text-xs text-muted-foreground">Loading custom images...</p>
+              </div>
+            ) : filteredCustomImages.length === 0 ? (
+              <Card className="p-12 text-center shadow-sm">
+                <ImageIcon className="mx-auto h-12 w-12 text-muted-foreground/30 mb-3" />
+                <h3 className="text-lg font-bold">No Custom Images Found</h3>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto mt-1">
+                  {searchTerm.trim() 
+                    ? `No custom images match "${searchTerm}".` 
+                    : "You haven't uploaded any custom marketing images yet. Use the upload box above to upload your first image."}
+                </p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                {filteredCustomImages.map(item => renderCustomImageCard(item))}
+              </div>
+            )}
+          </div>
+        ) : isLoading ? (
           <div className="flex flex-col items-center justify-center min-h-[300px] gap-3">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
             <p className="text-sm text-muted-foreground">Gathering all website images...</p>
@@ -1092,12 +1570,57 @@ export default function AdminImageGalleryPage() {
             
             <div className="p-4 bg-slate-900/80 border-t border-slate-800 flex items-center justify-between">
               <span className="text-xs text-slate-400 font-mono">Folder: public/uploads/{viewingImage?.uploadFolder}</span>
-              <Button size="sm" onClick={() => { const item = viewingImage; setViewingImage(null); if (item) handleOpenUploadModal(item); }} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-                <Upload className="h-4 w-4 mr-1.5" /> Change This Image
-              </Button>
+              {viewingImage?.originalItem ? (
+                <Button size="sm" onClick={() => { const item = viewingImage.originalItem; setViewingImage(null); if (item) handleOpenUploadModal(item); }} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+                  <Upload className="h-4 w-4 mr-1.5" /> Change This Image
+                </Button>
+              ) : viewingImage?.imageUrl ? (
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => window.open(viewingImage.imageUrl, '_blank')} className="text-xs bg-white/90 text-slate-900 hover:bg-white">
+                    <ExternalLink className="h-3.5 w-3.5 mr-1" /> Open New Tab
+                  </Button>
+                  <Button size="sm" onClick={() => {
+                    const fullUrl = viewingImage.imageUrl.startsWith('http') ? viewingImage.imageUrl : `${window.location.origin}${viewingImage.imageUrl.startsWith('/') ? '' : '/'}${viewingImage.imageUrl}`;
+                    navigator.clipboard.writeText(fullUrl);
+                    toast({ title: "URL Copied to Clipboard! 📋", description: fullUrl });
+                  }} className="bg-purple-600 hover:bg-purple-700 text-white font-bold">
+                    <Copy className="h-4 w-4 mr-1.5" /> Copy Image URL
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Custom Image Confirmation Dialog */}
+        <AlertDialog open={!!deleteCandidate} onOpenChange={(open) => !open && setDeleteCandidate(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                <Trash2 className="h-5 w-5" />
+                Delete Custom Image
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2">
+                <span>Are you sure you want to permanently delete <strong className="text-foreground">"{deleteCandidate?.name}"</strong>?</span>
+                <span className="block text-xs text-muted-foreground">This will remove the image file from server storage and delete its record. Anyone with the copied link will no longer be able to access it.</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeletingCustom}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleExecuteDeleteCustomImage();
+                }}
+                disabled={isDeletingCustom}
+                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold"
+              >
+                {isDeletingCustom ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
+                Permanently Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </PermissionGuard>
   );
