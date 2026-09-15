@@ -5,6 +5,8 @@ import * as admin from 'firebase-admin';
 
 import { getPushTemplate } from '@/app/actions/pushSettingsActions';
 import { replacePlaceholders } from '@/lib/seoUtils';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
+import { verifyRequest } from '@/lib/dbSecurity';
 
 // Initialize messaging only once
 let messaging: admin.messaging.Messaging;
@@ -49,6 +51,18 @@ function determinePushType(title: string): string {
 
 export async function POST(request: Request) {
   try {
+    // 1. Rate Limiting
+    const rl = checkRateLimit(request, { max: 30, windowMs: 60 * 1000, keyPrefix: 'send-push' });
+    if (!rl.allowed) {
+      return rateLimitResponse(rl.resetTime);
+    }
+
+    // 2. Caller Authentication Verification
+    const verification = await verifyRequest(request);
+    if (!verification.isInternalBypass && !verification.isAdmin && !verification.userId) {
+      return NextResponse.json({ error: 'Unauthorized: Authentication required to dispatch push notifications.' }, { status: 401 });
+    }
+
     const { userId, title, body, href, icon, sound, type: customType, variables } = await request.json();
 
     if (!userId || !title || !body) {

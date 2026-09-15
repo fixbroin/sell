@@ -40,29 +40,10 @@ interface AdminChatMessageAreaProps {
 
 const ADMIN_FALLBACK_AVATAR_INITIAL_CHAT_AREA = "S";
 
-// Function to format chat messages with clean markdown links, bold text, and clickable URLs
-const formatChatMessage = (text: string) => {
-  if (!text) return '';
-  // 1. Convert Markdown links: [Title](url) -> <a href="url">Title</a>
-  const mdLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-  let formatted = text.replace(mdLinkRegex, (_, title, url) => {
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="font-semibold underline text-primary hover:text-primary/80 transition-colors">${title}</a>`;
-  });
+import { safeFormatChatMessage } from '@/lib/chatSanitizer';
 
-  // 2. Convert Bold: **text** -> <strong>text</strong>
-  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-  // 3. Convert Strikethrough: ~~text~~ -> <del class="opacity-75">text</del>
-  formatted = formatted.replace(/~~([^~]+)~~/g, '<del class="opacity-75">$1</del>');
-
-  // 4. Auto-link remaining raw URLs that are not already inside href
-  const rawUrlRegex = /(?<!href="|href='|">)(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/gi;
-  formatted = formatted.replace(rawUrlRegex, (url) => {
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="font-medium underline text-primary hover:text-primary/80 transition-colors">${url}</a>`;
-  });
-
-  return formatted;
-};
+// Safe chat message formatter preventing stored/DOM-based XSS
+const formatChatMessage = safeFormatChatMessage;
 
 export default function AdminChatMessageArea({ selectedUser }: AdminChatMessageAreaProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);

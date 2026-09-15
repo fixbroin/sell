@@ -2,11 +2,32 @@ import mysql from 'mysql2/promise';
 import { Timestamp, isTimestamp } from './timestamp';
 export { Timestamp };
 
-const host = process.env.MYSQL_HOST || 'localhost';
-const user = process.env.MYSQL_USER || 'root';
-const password = process.env.MYSQL_PASSWORD || '';
-const databaseName = process.env.MYSQL_DATABASE || 'yourbrand_db';
-const port = parseInt(process.env.MYSQL_PORT || '3306', 10);
+function getMySqlConfig() {
+  const dbUrl = process.env.DATABASE_URL;
+  if (dbUrl && (dbUrl.startsWith('mysql://') || dbUrl.startsWith('mysql2://'))) {
+    try {
+      const parsed = new URL(dbUrl);
+      return {
+        host: parsed.hostname || 'localhost',
+        user: decodeURIComponent(parsed.username || 'root'),
+        password: decodeURIComponent(parsed.password || ''),
+        databaseName: (parsed.pathname || '').replace(/^\//, '') || 'yourbrand_db',
+        port: parseInt(parsed.port || '3306', 10),
+      };
+    } catch (e) {
+      console.warn("Failed to parse DATABASE_URL, falling back to MYSQL_* variables:", e);
+    }
+  }
+  return {
+    host: process.env.MYSQL_HOST || 'localhost',
+    user: process.env.MYSQL_USER || 'root',
+    password: process.env.MYSQL_PASSWORD || '',
+    databaseName: process.env.MYSQL_DATABASE || 'yourbrand_db',
+    port: parseInt(process.env.MYSQL_PORT || '3306', 10),
+  };
+}
+
+const { host, user, password, databaseName, port } = getMySqlConfig();
 
 let poolPromise: Promise<mysql.Pool> | null = null;
 let isInitialized = false;

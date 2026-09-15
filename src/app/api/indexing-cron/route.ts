@@ -4,11 +4,20 @@ import { adminDb } from '@/lib/firebaseAdmin';
 import { getBaseUrl } from '@/lib/config';
 import { notifyGoogleIndexing } from '@/lib/googleIndexing';
 import { Timestamp } from '@/lib/mysqlDbAdmin';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
 
 export async function GET(req: NextRequest) {
-  const secret = new URL(req.url).searchParams.get('secret');
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // 1. Rate Limiting
+  const rl = checkRateLimit(req, { max: 10, windowMs: 60 * 1000, keyPrefix: 'indexing-cron' });
+  if (!rl.allowed) {
+    return rateLimitResponse(rl.resetTime);
+  }
+
+  // 2. Secret Verification (CRON_SECRET must be set and match)
+  const configuredSecret = process.env.CRON_SECRET;
+  const providedSecret = new URL(req.url).searchParams.get('secret') || req.headers.get('x-cron-secret');
+  if (!configuredSecret || configuredSecret.length < 16 || providedSecret !== configuredSecret) {
+    return NextResponse.json({ error: 'Unauthorized: A valid CRON_SECRET is required to execute indexing tasks.' }, { status: 401 });
   }
 
   try {

@@ -7,6 +7,7 @@ import type { MarketingAutomationSettings, AppSettings, GlobalWebSettings, Fires
 import { getBaseUrl } from '@/lib/config';
 import { getMarketingAutomationSettings, getGlobalAppSettings, getGlobalWebSettings } from '@/lib/webServerUtils';
 import { formatDateInTimezone } from '@/lib/utils';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
 
 /**
  * Server-side helper to safely get milliseconds from various timestamp formats.
@@ -80,9 +81,17 @@ const replaceMergeTags = (
 };
 
 export async function GET(req: NextRequest) {
-    const secret = new URL(req.url).searchParams.get('secret');
-    if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // 1. Rate Limiting
+    const rl = checkRateLimit(req, { max: 10, windowMs: 60 * 1000, keyPrefix: 'marketing-cron' });
+    if (!rl.allowed) {
+        return rateLimitResponse(rl.resetTime);
+    }
+
+    // 2. Secret Verification (CRON_SECRET must be set and match)
+    const configuredSecret = process.env.CRON_SECRET;
+    const providedSecret = new URL(req.url).searchParams.get('secret') || req.headers.get('x-cron-secret');
+    if (!configuredSecret || configuredSecret.length < 16 || providedSecret !== configuredSecret) {
+        return NextResponse.json({ error: 'Unauthorized: A valid CRON_SECRET is required to execute cron tasks.' }, { status: 401 });
     }
 
     try {

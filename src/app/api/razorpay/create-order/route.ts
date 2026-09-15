@@ -3,6 +3,7 @@ import Razorpay from 'razorpay';
 import { nanoid } from 'nanoid';
 
 import { adminDb } from '@/lib/firebaseAdmin';
+import { calculateServerBookingTotal } from '@/lib/bookingPricingServer';
 
 function calculateServerCancellationFee(bookingData: any, appConfig: any) {
   if (!appConfig?.enableCancellationPolicy) {
@@ -89,9 +90,48 @@ export async function POST(req: NextRequest) {
       }
       const bookingData = bookingDoc.data() as any;
       if (type === 'booking') {
-        reconciledBaseAmount = bookingData.totalAmount;
+        const cartEntries = (bookingData.services || []).map((s: any) => ({
+          serviceId: s.serviceId || s.id,
+          quantity: s.quantity || 1,
+        }));
+
+        if (cartEntries.length > 0) {
+          const calculation = await calculateServerBookingTotal({
+            cartEntries,
+            promoCode: bookingData.discountCode,
+            categoryId: bookingData.workCategoryId,
+          });
+          reconciledBaseAmount = calculation.totalAmount;
+
+          // Sync pending booking document with authoritative calculated figures
+          await adminDb.collection('bookings').doc(bookingId).update({
+            subTotal: calculation.subTotal,
+            visitingCharge: calculation.visitingCharge,
+            taxAmount: calculation.taxAmount,
+            totalAmount: calculation.totalAmount,
+            platformFeeTotal: calculation.platformFeeTotal,
+            appliedPlatformFees: calculation.appliedPlatformFees,
+            discountAmount: calculation.discountAmount,
+            services: calculation.services,
+            updatedAt: new Date(),
+          });
+        } else {
+          reconciledBaseAmount = bookingData.totalAmount;
+        }
       } else if (type === 'cancellation_fee') {
         reconciledBaseAmount = calculateServerCancellationFee(bookingData, appConfig);
+      }
+    } else if (type === 'booking' && notes?.cartEntries) {
+      try {
+        const parsedCart = typeof notes.cartEntries === 'string' ? JSON.parse(notes.cartEntries) : notes.cartEntries;
+        const calculation = await calculateServerBookingTotal({
+          cartEntries: parsedCart,
+          promoCode: notes.promoCode,
+          categoryId: notes.categoryId,
+        });
+        reconciledBaseAmount = calculation.totalAmount;
+      } catch (err) {
+        console.error('Error calculating direct cart entries in Razorpay order:', err);
       }
     } else if (type === 'wallet_topup' && providerId) {
       const minDeposit = appConfig?.minDepositAmount || 500;

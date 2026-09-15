@@ -1141,8 +1141,13 @@
         <tbody>
           <tr>
             <td><code>DATABASE_URL</code></td>
-            <td>MySQL Connection URL</td>
-            <td><code>mysql://root:pass@127.0.0.1:3306/wecanfix</code></td>
+            <td>MySQL Connection URL (Option A)</td>
+            <td><code>mysql://user:pass@127.0.0.1:3306/wecanfix</code></td>
+          </tr>
+          <tr>
+            <td><code>MYSQL_HOST</code>, <code>MYSQL_USER</code>, <code>MYSQL_PASSWORD</code>, <code>MYSQL_DATABASE</code>, <code>MYSQL_PORT</code></td>
+            <td>Individual MySQL Connection Parameters (Option B)</td>
+            <td><code>localhost</code>, <code>wecanfix_user</code>, <code>StrongPass!</code>, <code>wecanfix</code>, <code>3306</code></td>
           </tr>
           <tr>
             <td><code>NEXT_PUBLIC_BASE_URL</code></td>
@@ -1150,9 +1155,9 @@
             <td><code>https://yourdomain.com</code></td>
           </tr>
           <tr>
-            <td><code>JWT_SECRET</code></td>
-            <td>32+ character random secret string</td>
-            <td><code>your-super-secret-jwt-key-change-me</code></td>
+            <td><code>INTERNAL_API_SECRET</code></td>
+            <td>Server-side internal security key (32+ characters)</td>
+            <td><code>generate-random-32-char-secret-string</code></td>
           </tr>
           <tr>
             <td><code>CRON_SECRET</code></td>

@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getAuth } from 'firebase-admin/auth';
 import { initFirebaseAdmin } from '@/lib/firebase-admin';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
 
 export async function POST(request: Request) {
+  // Strict rate limit: Max 5 requests per minute per IP to prevent email enumeration
+  const rl = checkRateLimit(request, { max: 5, windowMs: 60 * 1000, keyPrefix: 'check-email' });
+  if (!rl.allowed) {
+    return rateLimitResponse(rl.resetTime);
+  }
+
   try {
     const { email } = await request.json();
     if (!email) {

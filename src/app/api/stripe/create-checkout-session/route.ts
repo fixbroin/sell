@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { calculateServerBookingTotal } from '@/lib/bookingPricingServer';
 
 const getCurrencySubunitDecimals = (currencyCode: string): number => {
   const c = currencyCode.toUpperCase();
@@ -90,7 +91,34 @@ export async function POST(req: NextRequest) {
       }
       const bookingData = bookingDoc.data() as any;
       if (type === 'booking') {
-        reconciledAmount = bookingData.totalAmount;
+        const cartEntries = (bookingData.services || []).map((s: any) => ({
+          serviceId: s.serviceId || s.id,
+          quantity: s.quantity || 1,
+        }));
+
+        if (cartEntries.length > 0) {
+          const calculation = await calculateServerBookingTotal({
+            cartEntries,
+            promoCode: bookingData.discountCode,
+            categoryId: bookingData.workCategoryId,
+          });
+          reconciledAmount = calculation.totalAmount;
+
+          // Sync pending booking document with authoritative calculated figures
+          await adminDb.collection('bookings').doc(bookingId).update({
+            subTotal: calculation.subTotal,
+            visitingCharge: calculation.visitingCharge,
+            taxAmount: calculation.taxAmount,
+            totalAmount: calculation.totalAmount,
+            platformFeeTotal: calculation.platformFeeTotal,
+            appliedPlatformFees: calculation.appliedPlatformFees,
+            discountAmount: calculation.discountAmount,
+            services: calculation.services,
+            updatedAt: new Date(),
+          });
+        } else {
+          reconciledAmount = bookingData.totalAmount;
+        }
       } else if (type === 'cancellation_fee') {
         reconciledAmount = calculateServerCancellationFee(bookingData, appConfig);
       }

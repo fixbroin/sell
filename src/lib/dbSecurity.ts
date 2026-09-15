@@ -1,26 +1,31 @@
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { NextRequest } from 'next/server';
 
-const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || "default_internal_secret_key_123456";
+// Strictly require configured internal secret with minimum 32 characters; NO fallback key
+const rawSecret = process.env.INTERNAL_API_SECRET;
+const INTERNAL_SECRET = (rawSecret && rawSecret.trim().length >= 32) ? rawSecret.trim() : null;
 
 export interface RequestUser {
   uid: string;
   email?: string;
   role?: string;
   isInternal: boolean;
+  isAdmin?: boolean;
+  userId?: string;
+  isInternalBypass?: boolean;
 }
 
 /**
  * Decodes Authorization header token or checks for x-internal-token.
  */
-export async function verifyRequest(req: NextRequest): Promise<RequestUser> {
-  // 1. Check internal bypass header (for server-side routes / Next.js server actions)
+export async function verifyRequest(req: NextRequest | Request): Promise<RequestUser> {
+  // 1. Check internal bypass header (for secure server-side routes with valid configured secret)
   const internalToken = req.headers.get('x-internal-token');
-  if (internalToken === INTERNAL_SECRET) {
-    return { uid: 'server', role: 'super_admin', isInternal: true };
+  if (INTERNAL_SECRET && internalToken && internalToken === INTERNAL_SECRET) {
+    return { uid: 'server', role: 'super_admin', isInternal: true, isAdmin: true, userId: 'server', isInternalBypass: true };
   }
 
-  const guestUser: RequestUser = { uid: 'guest', role: 'guest', isInternal: false };
+  const guestUser: RequestUser = { uid: 'guest', role: 'guest', isInternal: false, isAdmin: false, isInternalBypass: false };
 
   // 2. Check Authorization Bearer header
   const authHeader = req.headers.get('authorization');
@@ -34,24 +39,31 @@ export async function verifyRequest(req: NextRequest): Promise<RequestUser> {
     const uid = decodedToken.uid;
     const email = decodedToken.email;
 
-    // Fetch user role from database (check both users and admins collection)
-    let role: string | undefined = undefined;
-    const userDoc = await adminDb.collection('users').doc(uid).get();
-    if (userDoc.exists) {
-      role = userDoc.data()?.role;
-    }
+    // Security Rule: Administrative roles MUST NEVER be read from the regular `users` collection!
+    // Admin privileges are strictly derived from the dedicated `admins` collection.
+    let role: string = 'customer';
 
-    if (!role || (role !== 'super_admin' && role !== 'finance_admin')) {
+    try {
       const adminDoc = await adminDb.collection('admins').doc(uid).get();
       if (adminDoc.exists) {
         const adminData = adminDoc.data();
-        if (adminData?.status === 'active' || adminData?.role) {
-          role = adminData.role || 'super_admin';
+        if (adminData?.status === 'active' && adminData?.role) {
+          role = adminData.role;
+        }
+      } else {
+        // Check if user has an approved provider application
+        const providerDoc = await adminDb.collection('providerApplications').doc(uid).get();
+        if (providerDoc.exists && providerDoc.data()?.status === 'approved') {
+          role = 'provider';
         }
       }
+    } catch (dbErr) {
+      console.error("Error reading role verification from adminDb:", dbErr);
     }
 
-    return { uid, email, role, isInternal: false };
+    const tempUser: RequestUser = { uid, email, role, isInternal: false };
+    const isAdmin = isUserAdmin(tempUser);
+    return { uid, email, role, isInternal: false, isAdmin, userId: uid, isInternalBypass: false };
   } catch (error) {
     console.error("verifyRequest authentication error:", error);
     return guestUser;
@@ -62,27 +74,97 @@ export async function verifyRequest(req: NextRequest): Promise<RequestUser> {
  * Determines if the authenticated user has administrator privileges.
  */
 export function isUserAdmin(user: RequestUser): boolean {
-  const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@yourdomain.com";
-  const userEmail = (user.email || '').toLowerCase();
-  return (
-    user.isInternal ||
-    user.role === 'super_admin' ||
-    user.role === 'superadmin' ||
-    user.role === 'finance_admin' ||
-    user.role === 'admin' ||
-    user.role === 'staff' ||
-    userEmail === ADMIN_EMAIL.toLowerCase() ||
-    userEmail === 'admin@yourdomain.com' ||
-    userEmail === 'admin@yourdomain.com' ||
-    false
-  );
+  if (user.isInternal) return true;
+  if (!user.uid || user.uid === 'guest') return false;
+
+  const ADMIN_EMAIL = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || '').toLowerCase().trim();
+  const userEmail = (user.email || '').toLowerCase().trim();
+
+  const adminRoles = ['super_admin', 'superadmin', 'finance_admin', 'admin', 'staff'];
+  const hasAdminRole = !!(user.role && adminRoles.includes(user.role));
+  const isEnvAdminEmail = !!(ADMIN_EMAIL && userEmail && userEmail === ADMIN_EMAIL);
+
+  return hasAdminRole || isEnvAdminEmail;
 }
 
 /**
- * Firestore-style database security rules.
+ * Sanitizes configuration and settings objects by stripping sensitive credentials
+ * such as payment gateway secret keys, webhooks secrets, SMTP passwords, and API tokens.
+ */
+export function sanitizeSettingsData(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+
+  // Sensitive keys that must NEVER be returned to non-admin callers
+  const SENSITIVE_KEYS = new Set([
+    'stripesecretkey',
+    'stripewebhooksecret',
+    'razorpaykeysecret',
+    'razorpaywebhooksecret',
+    'smtppass',
+    'smtppassword',
+    'smtpuser',
+    'smtphost',
+    'cronsecret',
+    'jwtsecret',
+    'internalapisecret',
+    'whatsappapitoken',
+    'whatsapptoken',
+    'whatsappappsecret',
+    'firebaseserviceaccount',
+    'firebaseadminsdk',
+    'adminsdkconfig',
+    'privatekey',
+    'private_key',
+    'secretkey',
+    'appsecret'
+  ]);
+
+  const sanitized: any = Array.isArray(data) ? [] : {};
+
+  for (const [key, val] of Object.entries(data)) {
+    const lowerKey = key.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    if (SENSITIVE_KEYS.has(lowerKey) || lowerKey.endsWith('secret') || lowerKey.endsWith('keysecret') || lowerKey.endsWith('pass') || lowerKey.endsWith('password')) {
+      // Omit sensitive field
+      continue;
+    }
+
+    if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+      sanitized[key] = sanitizeSettingsData(val);
+    } else {
+      sanitized[key] = val;
+    }
+  }
+
+  return sanitized;
+}
+
+/**
+ * Validates whether a given field can be mutated by a non-administrative user.
+ * Prevents privilege escalation and tampering with account status or wallet balances.
+ */
+export function isFieldProtectedFromCustomerMutation(field: string): boolean {
+  const PROTECTED_USER_FIELDS = new Set([
+    'role',
+    'isadmin',
+    'isstaff',
+    'issuperadmin',
+    'status',
+    'walletbalance',
+    'commissionrate',
+    'permissions',
+    'referralcode',
+    'totalearnings',
+    'rating',
+    'reviewcount'
+  ]);
+  return PROTECTED_USER_FIELDS.has(field.toLowerCase().replace(/[^a-z0-9]/g, ''));
+}
+
+/**
+ * Database security rules for reading and writing data.
  */
 export function validateAccess(user: RequestUser, path: string, action: 'read' | 'write'): boolean {
-  // 1. Admins have absolute read & write access to everything
+  // 1. Admins and verified internal server requests have full access
   if (isUserAdmin(user)) {
     return true;
   }
@@ -91,22 +173,25 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
   const table = parts[0];
   const docId = parts[1];
 
-  // Helper: check if doc ID matches user's UID
-  const isOwner = docId === user.uid;
+  const isAuthenticated: boolean = Boolean(user.uid && user.uid !== 'guest');
+  const isOwner: boolean = Boolean(isAuthenticated && docId === user.uid);
 
-  // 2. Public Static Content (Readable by all, writable only by Admin)
-  const PUBLIC_READ_TABLES = [
+  // 2. Financial & System-Critical Tables (NEVER directly writable by client mutations)
+  // These tables can ONLY be written by authenticated server routes / admin tasks:
+  const SERVER_ONLY_WRITE_TABLES = [
+    'providerWalletTransactions',
+    'invoices',
+    'admins',
+    'webSettings',
+    'appConfiguration',
     'adminCategories',
     'adminSubCategories',
     'adminServices',
     'adminSlideshows',
-    'webSettings',
-    'appConfiguration',
     'contentPages',
     'adminFAQs',
     'taxes',
     'adminPopups',
-    'blogPosts',
     'cities',
     'areas',
     'pinCodeAreaMappings',
@@ -123,25 +208,22 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
     'adminTaxes'
   ];
 
-  if (PUBLIC_READ_TABLES.includes(table)) {
-    return action === 'read';
+  if (SERVER_ONLY_WRITE_TABLES.includes(table)) {
+    if (action === 'write') return false; // Strictly blocked for non-admins
+    // For read access: public static content is readable (sanitized at endpoint level)
+    return true;
   }
 
-  // 3. User Accounts (Owner only, or query-level filtered getDocs, or allowed if authenticated to view provider/public user info)
+  // 3. User Accounts (Owner can read/write their own; non-owner read requires authentication)
   if (table === 'users') {
-    if (action === 'read') return user.uid !== 'guest';
-    return isOwner;
+    if (action === 'read') return isAuthenticated;
+    return isOwner; // Fields sanitized in mutate endpoint
   }
 
-  // 4. Admins table (Users can read/check their own admin doc; admin writes)
-  if (table === 'admins') {
-    return isOwner;
-  }
-
-  // 5. Provider Applications (Owner can write/read own; Public read allowed for approved providers for serviceable zone mapping & checkout availability)
+  // 4. Provider Applications (Public read for directory/assignment; authenticated applicants can create/update their own)
   if (table === 'providerApplications') {
-    if (action === 'read') return true;
-    return isOwner;
+    if (action === 'read') return true; // Sanitized at endpoint level for non-admins
+    return Boolean(isOwner || isAuthenticated);
   }
 
   // 5. Carts (Owner only)
@@ -149,44 +231,50 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
     return isOwner;
   }
 
-  // 6. Contact & Popup Submissions & Logs (Write-only for guests/users, read-only for admin)
+  // 6. Public Inquiries & Form Submissions (Write-allowed for visitors, read-only for admin)
   if ([
     'contactUsSubmissions',
     'popupSubmissions',
-    'userActivities',
     'outOfZoneRequests',
     'visitorInfoLogs',
-    'searchAnalytics'
+    'searchAnalytics',
+    'customServiceRequests'
   ].includes(table)) {
     return action === 'write';
   }
 
-  // 7. Chats & Chat Messages (Only participants can access)
+  // 7. Chats & Chat Messages (Only authenticated users)
   if (table === 'chats' || table === 'chats_messages') {
-    // We allow access; sub-level messages check is checked in query filters
-    return true;
+    return isAuthenticated;
   }
 
-  // 8. Bookings (Filtered by customerId/providerId query constraints, write allowed to create booking)
+  // 8. Bookings (Readable for tracking; writable for initial creation; status escalation guarded in mutate route)
   if (table === 'bookings') {
-    if (action === 'write') return true; // Can create or update booking details (e.g. pay cancel fee)
-    return true; // Read is allowed; returned data is filtered at database query level
+    if (action === 'read') return true;
+    // Clients can create initial bookings with 'Pending Payment'; escalation to Confirmed/Completed is strictly blocked in /api/db/mutate
+    return action === 'write';
   }
 
   // 9. User Notifications
   if (table === 'userNotifications') {
-    return true; // Owner checking is handled via query parameters
+    return isAuthenticated;
   }
 
-  // 10. Withdrawals & Quotations & Invoices & Referrals & Custom Requests
-  if (['withdrawalRequests', 'quotations', 'invoices', 'referrals', 'leaves', 'customServiceRequests', 'providerWalletTransactions', 'providerComplaints'].includes(table)) {
-    return true; // Handled dynamically in components/actions by filtering for providerId/userId
+  // 10. Withdrawals, Quotations, Referrals, Leaves, Provider Complaints
+  if ([
+    'withdrawalRequests',
+    'quotations',
+    'referrals',
+    'leaves',
+    'providerComplaints'
+  ].includes(table)) {
+    return isAuthenticated;
   }
 
-  // 11. Customer Reviews (Public read, authenticated write)
+  // 11. Customer Reviews (Public read, public write submission)
   if (table === 'adminReviews') {
     if (action === 'read') return true;
-    return action === 'write' && user.uid !== 'guest';
+    return action === 'write';
   }
 
   // Block everything else by default

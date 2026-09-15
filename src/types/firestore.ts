@@ -912,6 +912,7 @@ export interface MarketingSettings {
   whatsAppPhoneNumberId?: string;
   whatsAppBusinessAccountId?: string;
   whatsAppVerifyToken?: string;
+  whatsAppAppSecret?: string;
   updatedAt?: Timestamp;
 }
 

@@ -3,12 +3,29 @@ import { type NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 import { getBaseUrl } from '@/lib/config';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rateLimit';
+import { verifyRequest } from '@/lib/dbSecurity';
 
 // Handler for the POST method
 export async function POST(req: NextRequest) {
   // Check for the correct request method
   if (req.method !== 'POST') {
     return NextResponse.json({ error: 'Method Not Allowed' }, { status: 405 });
+  }
+
+  // 1. Rate Limiting
+  const rl = checkRateLimit(req, { max: 20, windowMs: 60 * 1000, keyPrefix: 'whatsapp-send' });
+  if (!rl.allowed) {
+    return rateLimitResponse(rl.resetTime);
+  }
+
+  // 2. Privilege Verification (Admins or Internal system tasks only)
+  const verification = await verifyRequest(req);
+  if (!verification.isInternalBypass && !verification.isAdmin) {
+    return NextResponse.json(
+      { success: false, error: 'Unauthorized: WhatsApp dispatch requires administrative authorization.' },
+      { status: 401 }
+    );
   }
 
   try {

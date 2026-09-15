@@ -205,7 +205,7 @@ PACKAGE CONTENTS:
 
 QUICK START:
 1. Extract 'wecanfix-source-code.zip' to your project directory.
-2. Copy '.env.example' to '.env' and enter your database credentials.
+2. Copy '.env.example' to '.env' and configure your database credentials (supports DATABASE_URL or individual MYSQL_* variables).
 3. Run 'npm install' to install dependencies.
 4. Run 'npm run db:init' to create all database tables and seed initial data.
 5. Run 'npm run dev' to start the application (accessible at http://localhost:3006).

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/db-init.js && npx next dev --webpack --port 3006 --hostname 0.0.0.0",
+    "db:init": "node scripts/db-init.js",
     "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
     "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
     "build": "node scripts/db-init.js && npx next build --webpack && node scripts/patch-sw.js",

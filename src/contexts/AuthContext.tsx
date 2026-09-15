@@ -749,33 +749,24 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
     }
     setIsLoading(true);
     try {
-      // 1. Verify if the email is registered first using server API
-      const checkRes = await fetch('/api/auth/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: data.email }),
-      });
-      const checkData = await checkRes.json();
-      
-      if (checkRes.ok && checkData.exists === false) {
-        throw { code: 'auth/user-not-found', message: 'You are not registered' } as AuthError;
-      }
-
-      // 2. If it exists, attempt Firebase Auth sign-in
+      // Attempt Firebase Auth sign-in directly (prevent email enumeration)
       const userCredential = await signInWithEmailAndPassword(auth, data.email, data.password);
       await handleSuccessfulAuth(userCredential);
     } catch (error) {
       const authError = error as AuthError;
       console.error("Login error:", authError);
       
-      let message = authError.message;
-      if (authError.code === 'auth/user-not-found') {
-        message = "You are not registered";
-      } else if (
+      let message = "Invalid email or password. Please check your credentials.";
+      if (
+        authError.code === 'auth/user-not-found' || 
         authError.code === 'auth/invalid-credential' || 
         authError.code === 'auth/wrong-password'
       ) {
-        message = "Wrong password you entered";
+        message = "Invalid email or password. Please check your credentials.";
+      } else if (authError.code === 'auth/too-many-requests') {
+        message = "Too many failed login attempts. Please try again later.";
+      } else if (authError.message) {
+        message = authError.message;
       }
 
       toast({ title: "Login Failed", description: message, variant: "destructive" });
