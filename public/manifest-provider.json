@@ -1,0 +1,24 @@
+{
+  "name": "Yourbrand Provider",
+  "short_name": "Yourbrand Provider",
+  "id": "/provider",
+  "scope": "/provider",
+  "description": "Provider Dashboard for Yourbrand Services",
+  "start_url": "/provider",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F0F8FA",
+  "theme_color": "#598343",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

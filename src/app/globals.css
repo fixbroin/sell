@@ -1,0 +1,164 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Removed explicit body font-family as it's handled by Tailwind's font-body class */
+
+@layer base {
+  :root {
+    --background: 196 67% 96%; /* #F0F8FA */
+    --foreground: 210 10% 23%; /* Dark Gray for text */
+    --card: 0 0% 100%;
+    --card-foreground: 210 10% 23%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 10% 23%;
+    --primary: 181 39% 45%; /* #45A0A2 */
+    --primary-foreground: 0 0% 100%; /* White */
+    --secondary: 196 50% 90%; /* Lighter desaturated teal */
+    --secondary-foreground: 210 10% 23%;
+    --muted: 196 50% 90%;
+    --muted-foreground: 210 10% 45%; /* Muted gray */
+    --accent: 183 49% 30%; /* #276F73 */
+    --accent-foreground: 0 0% 100%; /* White */
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border:  0 0% 75%; /* Light teal border */
+    --input: 0 0% 47%; /* Light teal input background */
+    --ring: 181 39% 45%; /* Primary color for ring */
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 210 10% 10%; /* Dark background */
+    --foreground: 196 67% 96%; /* Light text */
+    --card: 210 10% 15%;
+    --card-foreground: 196 67% 96%;
+    --popover: 210 10% 15%;
+    --popover-foreground: 196 67% 96%;
+    --primary: 181 39% 55%; /* Slightly lighter primary for dark mode */
+    --primary-foreground: 0 0% 10%;
+    --secondary: 210 10% 25%;
+    --secondary-foreground: 196 67% 96%;
+    --muted: 210 10% 25%;
+    --muted-foreground: 196 50% 70%;
+    --accent: 183 49% 40%; /* #349398 */
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 210 10% 30%;
+    --input: 210 10% 30%;
+    --ring: 181 39% 55%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    @apply antialiased;
+  }
+  
+  .no-select {
+    -webkit-user-select: none; /* Safari */
+    -ms-user-select: none; /* IE 10 and IE 11 */
+    user-select: none; /* Standard syntax */
+  }
+
+  img {
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    user-drag: none;
+  }
+}
+
+html, body {
+  overflow-x: hidden;
+}
+
+/* Fix for Google Maps Places Autocomplete dropdown z-index */
+.pac-container {
+    z-index: 9999 !important; /* Extremely high z-index to ensure it's on top of everything */
+    pointer-events: auto !important; /* Explicitly enable pointer events */
+}
+
+/* Custom Thin Scrollbar for Sidebar */
+[data-sidebar="content"] {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+
+[data-sidebar="content"]::-webkit-scrollbar {
+  width: 4px;
+}
+
+[data-sidebar="content"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-sidebar="content"]::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 20px;
+}
+
+[data-sidebar="content"]::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Hide fixed bottom navigation and action bars when keyboard is active to prevent floating */
+.keyboard-active nav.fixed.bottom-0,
+.keyboard-active div.fixed.bottom-0,
+.keyboard-active footer.fixed.bottom-0 {
+    display: none !important;
+}
+
+/* Mobile Form and Keyboard Viewport Layout Fixes */
+@media (max-width: 767px) {
+    /* Prevent sticky form footers/buttons from floating in the middle of the screen over inputs */
+    form .sticky.bottom-0,
+    form [class*="sticky"][class*="bottom-0"],
+    [role="dialog"] .sticky.bottom-0,
+    [role="dialog"] [class*="sticky"][class*="bottom-0"],
+    .dialog-content .sticky.bottom-0,
+    .dialog-content [class*="sticky"][class*="bottom-0"] {
+        position: static !important;
+    }
+
+    /* Provide a bottom scrollable area in mobile forms ONLY when keyboard is active so inputs can easily scroll above it */
+    .keyboard-active form.overflow-y-auto,
+    .keyboard-active .overflow-y-auto form,
+    .keyboard-active [role="dialog"] .overflow-y-auto,
+    .keyboard-active .dialog-content .overflow-y-auto {
+        padding-bottom: 160px !important;
+    }
+}

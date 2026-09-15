@@ -1,0 +1,30 @@
+{
+  "name": "Yourbrand",
+  "short_name": "Yourbrand",
+  "id": "/",
+  "scope": "/",
+  "description": "Your trusted partner for all home service needs. Quality, reliability, and convenience.",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#469EA0",
+  "background_color": "#EEF8FC",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait"
+}

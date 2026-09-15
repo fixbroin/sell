@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WeCanFix Documentation - Handyman Service Booking & On-Demand Marketplace</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #0D9488;
+      --primary-hover: #0F766E;
+      --primary-light: #F0FDFA;
+      --primary-border: #CCFBF1;
+      --bg: #F8FAFC;
+      --surface: #FFFFFF;
+      --text: #1E293B;
+      --text-muted: #64748B;
+      --border: #E2E8F0;
+      --code-bg: #0F172A;
+      --code-text: #E2E8F0;
+      --success: #10B981;
+      --warning: #F59E0B;
+      --danger: #EF4444;
+      --info: #3B82F6;
+      --accent: #6366F1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 310px;
+      background-color: #0F172A;
+      color: #F8FAFC;
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1E293B;
+      z-index: 100;
+    }
+
+    .sidebar-header {
+      padding: 24px;
+      border-bottom: 1px solid #1E293B;
+    }
+
+    .sidebar-logo {
+      font-size: 22px;
+      font-weight: 800;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sidebar-logo span {
+      color: #14B8A6;
+    }
+
+    .sidebar-logo-sub {
+      font-size: 11px;
+      color: #94A3B8;
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      font-weight: 600;
+    }
+
+    .sidebar-search {
+      padding: 16px 20px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background-color: #1E293B;
+      color: #F8FAFC;
+      font-size: 13.5px;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
+    }
+
+    .sidebar-menu {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 16px 32px;
+    }
+
+    .menu-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748B;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin: 20px 8px 8px;
+    }
+
+    .menu-list {
+      list-style: none;
+    }
+
+    .menu-item a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      color: #94A3B8;
+      text-decoration: none;
+      font-size: 13.5px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .menu-item a:hover {
+      color: #FFFFFF;
+      background-color: #1E293B;
+    }
+
+    .menu-item.active a {
+      color: #FFFFFF;
+      background-color: var(--primary);
+      font-weight: 600;
+    }
+
+    .badge-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-pill-fast { background: #FEF08A; color: #854D0E; }
+    .badge-pill-new { background: #CCFBF1; color: #0F766E; }
+
+    /* Main Content */
+    .main-container {
+      margin-left: 310px;
+      flex: 1;
+      min-width: 0;
+      padding: 48px 64px 80px;
+      max-width: 1240px;
+    }
+
+    header.main-header {
+      margin-bottom: 40px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 28px;
+    }
+
+    .main-header h1 {
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 10px;
+      color: #0F172A;
+    }
+
+    .main-header p {
+      font-size: 16px;
+      color: var(--text-muted);
+      max-width: 850px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .meta-card {
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+      padding: 16px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .meta-card strong {
+      display: block;
+      color: #0F172A;
+      margin-bottom: 4px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .meta-card span.val {
+      font-weight: 700;
+      color: #0F172A;
+      font-size: 15px;
+    }
+
+    /* Sections */
+    section {
+      margin-bottom: 64px;
+      scroll-margin-top: 32px;
+    }
+
+    h2 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #0F172A;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid var(--primary-border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h3 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1E293B;
+      margin: 28px 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h4 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #334155;
+      margin: 18px 0 8px;
+    }
+
+    p {
+      margin-bottom: 16px;
+      color: #334155;
+      font-size: 15px;
+    }
+
+    ul, ol {
+      margin-bottom: 20px;
+      padding-left: 24px;
+      color: #334155;
+      font-size: 15px;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Code Blocks */
+    pre {
+      background-color: var(--code-bg);
+      color: var(--code-text);
+      padding: 20px;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-family: 'Fira Code', monospace;
+      font-size: 13.5px;
+      margin: 16px 0 24px;
+      border: 1px solid #1E293B;
+      position: relative;
+    }
+
+    code {
+      font-family: 'Fira Code', monospace;
+      background-color: #E2E8F0;
+      color: #0F172A;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13.5px;
+    }
+
+    pre code {
+      background-color: transparent;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+      font-size: 13.5px;
+    }
+
+    .btn-copy {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      background-color: #1E293B;
+      border: 1px solid #334155;
+      color: #94A3B8;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+
+    .btn-copy:hover {
+      background-color: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+    }
+
+    /* Alerts */
+    .alert {
+      padding: 16px 20px;
+      border-radius: 10px;
+      margin-bottom: 24px;
+      border-left: 4px solid;
+      font-size: 14.5px;
+    }
+
+    .alert-note {
+      background-color: #EFF6FF;
+      border-color: var(--info);
+      color: #1E3A8A;
+    }
+
+    .alert-tip {
+      background-color: #F0FDF4;
+      border-color: var(--success);
+      color: #14532D;
+    }
+
+    .alert-warning {
+      background-color: #FFFBEB;
+      border-color: var(--warning);
+      color: #78350F;
+    }
+
+    .alert-danger {
+      background-color: #FEF2F2;
+      border-color: var(--danger);
+      color: #7F1D1D;
+    }
+
+    .alert-title {
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 15px;
+    }
+
+    /* Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 28px;
+      font-size: 14px;
+      background: var(--surface);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 12px 16px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background-color: #F1F5F9;
+      font-weight: 700;
+      color: #0F172A;
+      font-size: 13.5px;
+    }
+
+    tr:nth-child(even) {
+      background-color: #F8FAFC;
+    }
+
+    /* Step List */
+    .step-list {
+      list-style: none;
+      counter-reset: steps;
+      padding-left: 0;
+      margin-bottom: 28px;
+    }
+
+    .step-item {
+      position: relative;
+      padding-left: 54px;
+      margin-bottom: 28px;
+    }
+
+    .step-item::before {
+      counter-increment: steps;
+      content: counter(steps);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 36px;
+      height: 36px;
+      background-color: var(--primary);
+      color: #FFFFFF;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 15px;
+      box-shadow: 0 2px 4px rgba(13,148,136,0.3);
+    }
+
+    /* Workflow Diagram Styles */
+    .workflow-container {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 24px;
+      margin: 24px 0 36px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      position: relative;
+    }
+
+    .workflow-step-card {
+      background: #F8FAFC;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 10px;
+      padding: 20px 16px;
+      text-align: center;
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .workflow-step-card:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(13,148,136,0.1);
+    }
+
+    .workflow-step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #FFFFFF;
+      font-weight: 700;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .workflow-step-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .workflow-step-title {
+      font-weight: 700;
+      color: #0F172A;
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    .workflow-step-desc {
+      font-size: 13px;
+      color: #64748B;
+      line-height: 1.4;
+    }
+
+    /* UI Tour & Screenshot Cards */
+    .ui-tour-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 24px;
+      margin: 24px 0 36px;
+    }
+
+    .screenshot-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+      margin-bottom: 24px;
+      transition: all 0.2s;
+    }
+
+    .screenshot-card:hover {
+      box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+      border-color: #CBD5E1;
+    }
+
+    .screenshot-header {
+      background: #0F172A;
+      color: #FFFFFF;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 14.5px;
+    }
+
+    .screenshot-img-wrap {
+      background: #F8FAFC;
+      border-bottom: 1px solid var(--border);
+      padding: 12px;
+    }
+
+    .screenshot-img-wrap img {
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+      border: 1px solid #E2E8F0;
+      display: block;
+      transition: transform 0.2s ease;
+    }
+
+    .screenshot-img-wrap img:hover {
+      transform: scale(1.01);
+    }
+
+    .screenshot-annotations {
+      padding: 18px 20px;
+    }
+
+    .screenshot-annotations h4 {
+      margin: 0 0 10px;
+      font-size: 14.5px;
+      color: #0F172A;
+    }
+
+    .callout-badge-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .callout-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #F0FDFA;
+      border: 1px solid #99F6E4;
+      color: #0F766E;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+
+    /* Troubleshooting Accordion */
+    .troubleshoot-item {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 14px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+
+    .troubleshoot-header {
+      padding: 16px 20px;
+      background: #F8FAFC;
+      font-weight: 700;
+      color: #0F172A;
+      font-size: 15px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+      transition: background 0.2s;
+    }
+
+    .troubleshoot-header:hover {
+      background: #F1F5F9;
+    }
+
+    .troubleshoot-body {
+      padding: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 14.5px;
+    }
+
+    .troubleshoot-badge-error {
+      background: #FEE2E2;
+      color: #991B1B;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: 'Fira Code', monospace;
+      margin-right: 8px;
+    }
+
+    /* External Tools Table */
+    .tool-link-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #F1F5F9;
+      border: 1px solid #CBD5E1;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #0F172A;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .tool-link-badge:hover {
+      background: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+      text-decoration: none;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .sidebar {
+        display: none;
+      }
+      .main-container {
+        margin-left: 0;
+        padding: 32px 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">WeCanFix<span>.</span></div>
+      <div class="sidebar-logo-sub">Documentation Hub</div>
+    </div>
+    
+    <div class="sidebar-search">
+      <input type="text" class="search-input" id="searchMenu" placeholder="Search documentation..." onkeyup="filterMenu()">
+    </div>
+
+    <nav class="sidebar-menu">
+      <div class="menu-section-title">Getting Started</div>
+      <ul class="menu-list" id="menuGroup1">
+        <li class="menu-item active"><a href="#quickstart">⚡ Quick Start (5 Min) <span class="badge-pill badge-pill-fast">Fast</span></a></li>
+        <li class="menu-item"><a href="#workflow">🔄 Visual Booking Workflow <span class="badge-pill badge-pill-new">Visual</span></a></li>
+        <li class="menu-item"><a href="#ui-tour">🖥️ System & UI Walkthrough</a></li>
+        <li class="menu-item"><a href="#intro">1. Overview & Architecture</a></li>
+        <li class="menu-item"><a href="#requirements">2. System Requirements</a></li>
+        <li class="menu-item"><a href="#local-setup">3. Local Installation Guide</a></li>
+      </ul>
+
+      <div class="menu-section-title">Configuration</div>
+      <ul class="menu-list" id="menuGroup2">
+        <li class="menu-item"><a href="#env-vars">4. Environment Variables</a></li>
+        <li class="menu-item"><a href="#mysql-db">5. MySQL Database Setup</a></li>
+        <li class="menu-item"><a href="#firebase-setup">6. Firebase Credentials</a></li>
+        <li class="menu-item"><a href="#external-tools">7. External Tools Directory</a></li>
+      </ul>
+
+      <div class="menu-section-title">Deployment</div>
+      <ul class="menu-list" id="menuGroup3">
+        <li class="menu-item"><a href="#vps-setup">8. VPS & PM2 Setup</a></li>
+        <li class="menu-item"><a href="#local-build-setup">9. Local Standalone Build</a></li>
+        <li class="menu-item"><a href="#shared-hosting">10. Remote Database Setup</a></li>
+        <li class="menu-item"><a href="#cron-jobs">11. Cron Jobs Setup</a></li>
+      </ul>
+
+      <div class="menu-section-title">Integrations & Support</div>
+      <ul class="menu-list" id="menuGroup4">
+        <li class="menu-item"><a href="#admin-gateways">12. Payments & Settings</a></li>
+        <li class="menu-item"><a href="#remote-media">13. Remote Media Storage</a></li>
+        <li class="menu-item"><a href="#troubleshooting">🛠️ Troubleshooting Guide <span class="badge-pill badge-pill-new">Fixes</span></a></li>
+        <li class="menu-item"><a href="#branding">15. White-labeling Setup</a></li>
+        <li class="menu-item"><a href="#disclaimers">16. Cost Disclaimers</a></li>
+        <li class="menu-item"><a href="#support">17. FAQ & Support</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <!-- Main Content Container -->
+  <main class="main-container">
+    <header class="main-header">
+      <h1>WeCanFix Documentation</h1>
+      <p>Multi-Vendor Handyman & On-Demand Service Booking Marketplace (Next.js 15 App Router, React 19, MySQL, Firebase Auth & PWA)</p>
+      
+      <div class="meta-grid">
+        <div class="meta-card">
+          <strong>Product Version</strong>
+          <span class="val">v1.0.0 (Production Ready)</span>
+        </div>
+        <div class="meta-card">
+          <strong>Framework & Stack</strong>
+          <span class="val">Next.js 15, React 19, MySQL</span>
+        </div>
+        <div class="meta-card">
+          <strong>Supported Platforms</strong>
+          <span class="val">Web + iOS & Android PWA</span>
+        </div>
+        <div class="meta-card">
+          <strong>Default Port</strong>
+          <span class="val">3006 (Configurable)</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- SECTION: QUICK START GUIDE -->
+    <section id="quickstart">
+      <h2>⚡ Quick Start Guide (5-Minute Fast Track)</h2>
+      <p>Follow these 4 simple steps to run the complete WeCanFix customer app, provider portal, and admin dashboard on your machine in under 5 minutes:</p>
+
+      <div class="step-list">
+        <div class="step-item">
+          <h4>Step 1: Extract Files & Set Environment Variables</h4>
+          <p>Unzip your purchased source package, navigate into the project directory, and create your <code>.env</code> configuration from the example template:</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>cp .env.example .env</code></pre>
+          <p>Open <code>.env</code> and fill in your MySQL database credentials (e.g. <code>DATABASE_URL="mysql://root:password@localhost:3306/wecanfix"</code>).</p>
+        </div>
+
+        <div class="step-item">
+          <h4>Step 2: Install Dependencies</h4>
+          <p>Install all required project dependencies (Node.js 18+ or 20+ LTS recommended):</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>npm install</code></pre>
+        </div>
+
+        <div class="step-item">
+          <h4>Step 3: Initialize Database & Seed Defaults</h4>
+          <p>Run the automated database migration script. This automatically creates all required MySQL tables, default settings, service categories, and initializes the super administrator account:</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>npm run db:init</code></pre>
+        </div>
+
+        <div class="step-item">
+          <h4>Step 4: Launch the Application</h4>
+          <p>Start the local Next.js development server:</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>npm run dev</code></pre>
+          <div class="alert alert-tip">
+            <div class="alert-title">🎉 Application Ready!</div>
+            <ul>
+              <li><strong>Customer Web App:</strong> <a href="http://localhost:3006" target="_blank">http://localhost:3006</a></li>
+              <li><strong>Provider Panel:</strong> <a href="http://localhost:3006/provider" target="_blank">http://localhost:3006/provider</a></li>
+              <li><strong>Super Admin Dashboard:</strong> <a href="http://localhost:3006/admin" target="_blank">http://localhost:3006/admin</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: VISUAL WORKFLOW DIAGRAM -->
+    <section id="workflow">
+      <h2>🔄 Visual Booking & Dispatch Workflow Diagram</h2>
+      <p>The diagram below illustrates the end-to-end lifecycle of a service booking—from customer cart discovery to provider dispatch, real-time tracking, completion, and automated commission payout.</p>
+
+      <div class="workflow-container">
+        <div class="workflow-grid">
+          <div class="workflow-step-card">
+            <div class="workflow-step-num">1</div>
+            <span class="workflow-step-icon">🛒</span>
+            <div class="workflow-step-title">Cart & Pin Drop</div>
+            <div class="workflow-step-desc">Customer selects services, price variants, enters address via Google Maps pin drop, and chooses date & dynamic time slot.</div>
+          </div>
+
+          <div class="workflow-step-card">
+            <div class="workflow-step-num">2</div>
+            <span class="workflow-step-icon">💳</span>
+            <div class="workflow-step-title">Instant Checkout</div>
+            <div class="workflow-step-desc">Payment processed securely via Razorpay, Stripe, or Pay After Service. Booking registered in MySQL database.</div>
+          </div>
+
+          <div class="workflow-step-card">
+            <div class="workflow-step-num">3</div>
+            <span class="workflow-step-icon">🤖</span>
+            <div class="workflow-step-title">Smart Dispatch</div>
+            <div class="workflow-step-desc">Automated engine validates provider service zones, radius, schedule, and wallet balance, dispatching instant push notification.</div>
+          </div>
+
+          <div class="workflow-step-card">
+            <div class="workflow-step-num">4</div>
+            <span class="workflow-step-icon">👷</span>
+            <div class="workflow-step-title">Provider Fulfillment</div>
+            <div class="workflow-step-desc">Provider accepts job, updates status (Accepted &rarr; En Route &rarr; In Progress), and completes work with customer OTP/Signature.</div>
+          </div>
+
+          <div class="workflow-step-card">
+            <div class="workflow-step-num">5</div>
+            <span class="workflow-step-icon">💰</span>
+            <div class="workflow-step-title">Settlement & Wallet</div>
+            <div class="workflow-step-desc">Platform fee automatically split. Provider wallet credited. Provider submits withdrawal request to bank account.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: SYSTEM & UI TOUR -->
+    <section id="ui-tour">
+      <h2>🖥️ Annotated System & UI Feature Tour</h2>
+      <p>Explore high-resolution, annotated walkthroughs of the key interfaces across the Super Admin Dashboard, Customer Storefront, and Multi-Vendor Provider Portal.</p>
+
+      <!-- 1. Super Admin Dashboard -->
+      <h3>🛡️ Super Admin Control Center</h3>
+      <div class="ui-tour-grid">
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Admin Executive Dashboard</span>
+            <span class="badge-pill badge-pill-new">Overview</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/10-admin-dashboard.png" alt="Admin Dashboard Overview" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Executive Analytics &amp; Operational Controls</h4>
+            <ul class="ui-tour-list">
+              <li><strong>Revenue &amp; Orders KPI:</strong> Real-time tracking of total platform revenue, booking volume, and provider earnings.</li>
+              <li><strong>Live Activity Feed:</strong> Instant updates on incoming orders, dispatched jobs, and provider registrations.</li>
+              <li><strong>Fast Navigation:</strong> One-click access to provider controls, commission management, and service categories.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">📊 Realtime KPIs</span>
+              <span class="callout-badge">⚡ Quick Dispatch</span>
+              <span class="callout-badge">👥 Provider Monitor</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Booking &amp; Dispatch Center</span>
+            <span class="badge-pill badge-pill-new">Dispatch</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/11-booking-management.png" alt="Booking Management" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Live Order Operations &amp; Reassignment</h4>
+            <ul class="ui-tour-list">
+              <li><strong>Multi-Status Filters:</strong> Instant filtering across Pending, Confirmed, In Progress, and Completed orders.</li>
+              <li><strong>Manual Override:</strong> Assign or reassign qualified providers on the fly with customer address verification.</li>
+              <li><strong>Invoice &amp; Payment Records:</strong> View payment gateway transaction IDs (Razorpay/Stripe) and print receipts.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">🔄 Status Controls</span>
+              <span class="callout-badge">🧾 Invoices</span>
+              <span class="callout-badge">📍 GPS Route</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>SEO &amp; Indexing Automation</span>
+            <span class="badge-pill badge-pill-new">SEO Tools</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/12-seo-settings.png" alt="SEO Settings &amp; Automation" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Programmatic Localized SEO Engine</h4>
+            <ul class="ui-tour-list">
+              <li><strong>OpenStreetMap Bulk Generator:</strong> Auto-generate city &amp; area landing pages for high organic rankings.</li>
+              <li><strong>Dynamic Meta Tags:</strong> AI-powered generation of SEO titles, canonical URLs, and schema markup.</li>
+              <li><strong>Google Indexing API:</strong> Push newly created service pages directly to Google Search for fast indexing.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">🌍 OSM Integration</span>
+              <span class="callout-badge">🤖 AI Metadata</span>
+              <span class="callout-badge">🚀 Google Indexing</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Customer Booking Experience -->
+      <h3>📱 Customer Web App &amp; PWA Experience</h3>
+      <div class="ui-tour-grid">
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Storefront Homepage</span>
+            <span class="badge-pill badge-pill-fast">Storefront</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/01-homepage.png" alt="Storefront Homepage" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Modern On-Demand Marketplace Discovery</h4>
+            <ul class="ui-tour-list">
+              <li><strong>Instant Search &amp; Filter:</strong> Live service search with category shortcuts and location detection.</li>
+              <li><strong>Promotional Banners:</strong> Dynamic hero sliders highlighting trending discounts and seasonal offers.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">🔍 Live Search</span>
+              <span class="callout-badge">🏷️ Discounts</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Categories &amp; Services</span>
+            <span class="badge-pill badge-pill-fast">Catalog</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/02-categories.png" alt="Categories Catalog" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Structured Category Hierarchy</h4>
+            <ul class="ui-tour-list">
+              <li><strong>Subcategory Breakdown:</strong> Well-structured browsing by trade (Plumbing, Electrical, Cleaning, AC Repair).</li>
+              <li><strong>Variable Pricing:</strong> Multi-tier pricing variants with inclusions, duration, and warranty badges.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">📁 Subcategories</span>
+              <span class="callout-badge">💵 Variable Pricing</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Google Maps Pin-Drop Location</span>
+            <span class="badge-pill badge-pill-fast">Location</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/06-address-map.png" alt="Google Maps Address Selector" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Precise Geolocation &amp; Service Zone Validation</h4>
+            <ul class="ui-tour-list">
+              <li><strong>Interactive Pin Drop:</strong> Customer places exact delivery pin with automatic reverse-geocoding.</li>
+              <li><strong>Zone Verification:</strong> Instant validation ensuring service is available in customer's neighborhood.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">📍 GPS Pin Drop</span>
+              <span class="callout-badge">🗺️ Zone Check</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Dynamic Time Slot Selection</span>
+            <span class="badge-pill badge-pill-fast">Scheduling</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/07-time-slots.png" alt="Dynamic Time Slot Selection" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Intelligent Calendar &amp; Buffer Engine</h4>
+            <ul class="ui-tour-list">
+              <li><strong>30/60-Minute Intervals:</strong> Auto-calculated time slots based on provider schedules and leaves.</li>
+              <li><strong>Same-Day Booking:</strong> Real-time buffer windows preventing double-booking or last-minute overload.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">📅 Date Picker</span>
+              <span class="callout-badge">⏰ Buffer Times</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Multi-Service Cart &amp; Checkout</span>
+            <span class="badge-pill badge-pill-fast">Checkout</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/05-checkout.png" alt="Cart &amp; Secure Checkout" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Streamlined Multi-Service Checkout</h4>
+            <ul class="ui-tour-list">
+              <li><strong>Multi-Item Cart:</strong> Add multiple services, select quantities, and apply promo discount codes.</li>
+              <li><strong>Payment Flexibility:</strong> Razorpay, Stripe, and Cash/Pay After Service supported seamlessly.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">🛒 Multi-Cart</span>
+              <span class="callout-badge">💳 Stripe / Razorpay</span>
+              <span class="callout-badge">💵 Cash</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Booking Confirmation &amp; Live Tracking</span>
+            <span class="badge-pill badge-pill-fast">Confirmation</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/08-booking-confirmation.png" alt="Booking Confirmation" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Live Order Receipt &amp; Timeline</h4>
+            <ul class="ui-tour-list">
+              <li><strong>Instant Confirmation:</strong> Clean order summary with schedule, address, and assigned provider details.</li>
+              <li><strong>Invoice &amp; Notifications:</strong> Automated email receipt, SMS/WhatsApp alerts, and downloadable PDF.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">✅ Order Success</span>
+              <span class="callout-badge">📄 PDF Invoice</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Multi-Vendor Provider Portal -->
+      <h3>👷 Multi-Vendor Provider Portal &amp; Wallet</h3>
+      <div class="ui-tour-grid">
+        <div class="screenshot-card">
+          <div class="screenshot-header">
+            <span>Provider Workbench &amp; Wallet</span>
+            <span class="badge-pill badge-pill-new">Provider Portal</span>
+          </div>
+          <div class="screenshot-img-wrap">
+            <img src="screenshots/13-provider-dashboard.png" alt="Provider Dashboard &amp; Wallet" loading="lazy">
+          </div>
+          <div class="screenshot-annotations">
+            <h4>Provider Job Execution &amp; Earnings Management</h4>
+            <ul class="ui-tour-list">
+              <li><strong>Job Alerts &amp; Status:</strong> Accept/Decline incoming bookings and toggle on-the-way / job started statuses.</li>
+              <li><strong>Transparent Wallet Ledger:</strong> Real-time tracking of gross earnings, platform commission cuts, and net payouts.</li>
+              <li><strong>Direct Bank Withdrawals:</strong> Submit withdrawal requests with automated minimum balance protection.</li>
+            </ul>
+            <div class="callout-badge-group">
+              <span class="callout-badge">🔔 Instant Job Alerts</span>
+              <span class="callout-badge">💰 Wallet Ledger</span>
+              <span class="callout-badge">🏦 Bank Payouts</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 1: OVERVIEW -->
+    <section id="intro">
+      <h2>1. Overview & Architecture</h2>
+      <p><strong>WeCanFix</strong> is built on the latest Next.js 15 App Router architecture. It separates presentation, business logic, and database persistence into clean, maintainable layers:</p>
+      <ul>
+        <li><strong>Frontend Layer:</strong> Next.js Server & Client Components styled with Tailwind CSS and Radix UI primitives.</li>
+        <li><strong>API Handler Layer:</strong> Secure Server Route Handlers located under <code>src/app/api/</code> with input validation using Zod.</li>
+        <li><strong>Database Layer:</strong> MySQL 5.7+ / 8.0+ connected via connection-pooled <code>mysql2</code> with automated schema migration.</li>
+        <li><strong>Authentication Layer:</strong> Firebase Authentication for Phone OTP, Google OAuth, and Email login.</li>
+      </ul>
+    </section>
+
+    <!-- SECTION 2: SYSTEM REQUIREMENTS -->
+    <section id="requirements">
+      <h2>2. System Requirements</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Minimum Requirement</th>
+            <th>Recommended</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Node.js</strong></td>
+            <td>v18.17.0+</td>
+            <td>v20.x or v22.x LTS</td>
+          </tr>
+          <tr>
+            <td><strong>Database</strong></td>
+            <td>MySQL 5.7+ / MariaDB 10.3+</td>
+            <td>MySQL 8.0+</td>
+          </tr>
+          <tr>
+            <td><strong>Server RAM</strong></td>
+            <td>1 GB (with Standalone Build)</td>
+            <td>2 GB - 4 GB RAM</td>
+          </tr>
+          <tr>
+            <td><strong>Web Server</strong></td>
+            <td>Direct Node.js execution</td>
+            <td>Nginx Reverse Proxy with Let's Encrypt SSL</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECTION 3: LOCAL INSTALLATION -->
+    <section id="local-setup">
+      <h2>3. Local Installation & Development Flow</h2>
+      <ol>
+        <li>Extract the downloaded archive to your preferred directory.</li>
+        <li>Create a MySQL database on your local server (e.g. <code>wecanfix</code>).</li>
+        <li>Copy <code>.env.example</code> to <code>.env</code> and update connection values.</li>
+        <li>Execute <code>npm install</code> to install package dependencies.</li>
+        <li>Execute <code>npm run db:init</code> to provision MySQL tables.</li>
+        <li>Execute <code>npm run dev</code> to boot the development server at <code>http://localhost:3006</code>.</li>
+      </ol>
+    </section>
+
+    <!-- SECTION 4: ENVIRONMENT VARIABLES -->
+    <section id="env-vars">
+      <h2>4. Environment Variables Guide</h2>
+      <p>Configure the following primary variables in your root <code>.env</code> file:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Description</th>
+            <th>Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>DATABASE_URL</code></td>
+            <td>MySQL Connection URL</td>
+            <td><code>mysql://root:pass@127.0.0.1:3306/wecanfix</code></td>
+          </tr>
+          <tr>
+            <td><code>NEXT_PUBLIC_BASE_URL</code></td>
+            <td>Public Website URL</td>
+            <td><code>https://yourdomain.com</code></td>
+          </tr>
+          <tr>
+            <td><code>JWT_SECRET</code></td>
+            <td>32+ character random secret string</td>
+            <td><code>your-super-secret-jwt-key-change-me</code></td>
+          </tr>
+          <tr>
+            <td><code>CRON_SECRET</code></td>
+            <td>Secret key for automated cron endpoints</td>
+            <td><code>your_secure_cron_token_123</code></td>
+          </tr>
+          <tr>
+            <td><code>FIREBASE_PROJECT_ID</code></td>
+            <td>Firebase Project Identifier</td>
+            <td><code>wecanfix-marketplace</code></td>
+          </tr>
+          <tr>
+            <td><code>FIREBASE_CLIENT_EMAIL</code></td>
+            <td>Service Account Client Email</td>
+            <td><code>firebase-adminsdk@project.iam.gserviceaccount.com</code></td>
+          </tr>
+          <tr>
+            <td><code>FIREBASE_PRIVATE_KEY</code></td>
+            <td>Service Account Private Key (with \n)</td>
+            <td><code>"-----BEGIN PRIVATE KEY-----\n..."</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECTION 5: MYSQL DATABASE SETUP -->
+    <section id="mysql-db">
+      <h2>5. MySQL Database Setup</h2>
+      <p>You can create your MySQL database on any VPS or shared hosting cPanel server using the following SQL commands:</p>
+      <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>CREATE DATABASE wecanfix CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'wecanfix_user'@'localhost' IDENTIFIED BY 'StrongPassword123!';
+GRANT ALL PRIVILEGES ON wecanfix.* TO 'wecanfix_user'@'localhost';
+FLUSH PRIVILEGES;</code></pre>
+      <p>Then run the automated database initialization script:</p>
+      <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>npm run db:init</code></pre>
+    </section>
+
+    <!-- SECTION 6: FIREBASE SETUP -->
+    <section id="firebase-setup">
+      <h2>6. Firebase Integration Guide</h2>
+      <p>Firebase handles customer and provider phone OTP authentication, Google sign-in, and Web Push notifications.</p>
+      <div class="step-list">
+        <div class="step-item">
+          <h4>Step 1: Create a Project in Firebase Console</h4>
+          <p>Navigate to the <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer">Firebase Console</a> and click <strong>Add project</strong>.</p>
+        </div>
+        <div class="step-item">
+          <h4>Step 2: Enable Authentication Methods</h4>
+          <p>Go to <strong>Authentication &rarr; Sign-in method</strong> and enable <strong>Phone</strong>, <strong>Google</strong>, and <strong>Email/Password</strong>.</p>
+        </div>
+        <div class="step-item">
+          <h4>Step 3: Generate Admin SDK Service Account</h4>
+          <p>Go to <strong>Project Settings &rarr; Service Accounts</strong>, select <strong>Node.js</strong>, and click <strong>Generate new private key</strong>. Copy the <code>project_id</code>, <code>client_email</code>, and <code>private_key</code> into your <code>.env</code> file.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 7: EXTERNAL TOOLS DIRECTORY -->
+    <section id="external-tools">
+      <h2>7. External Tools Directory & Setup Instructions</h2>
+      <p>Here is the verified list of tools, external dashboards, and installation guides associated with WeCanFix:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Tool / Service</th>
+            <th>Category</th>
+            <th>Link & Quick Instructions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Node.js LTS</strong></td>
+            <td>Runtime</td>
+            <td><a href="https://nodejs.org/en/download" target="_blank" class="tool-link-badge">Node.js Downloads ↗</a><br>Download and install Node.js 18.x or 20.x LTS for your OS.</td>
+          </tr>
+          <tr>
+            <td><strong>Firebase Console</strong></td>
+            <td>Auth &amp; Push</td>
+            <td><a href="https://console.firebase.google.com/" target="_blank" class="tool-link-badge">Firebase Console ↗</a><br>Configure Authentication, Cloud Messaging (FCM), and download Service Account JSON.</td>
+          </tr>
+          <tr>
+            <td><strong>Google Cloud Console</strong></td>
+            <td>Maps &amp; AI</td>
+            <td><a href="https://console.cloud.google.com/" target="_blank" class="tool-link-badge">Google Cloud Console ↗</a><br>Enable Maps JavaScript API, Places API, Geocoding API, and generate your API Key.</td>
+          </tr>
+          <tr>
+            <td><strong>Razorpay Dashboard</strong></td>
+            <td>Payment</td>
+            <td><a href="https://dashboard.razorpay.com/" target="_blank" class="tool-link-badge">Razorpay Dashboard ↗</a><br>Generate Key ID & Key Secret under Settings &rarr; API Keys. Set webhook endpoint.</td>
+          </tr>
+          <tr>
+            <td><strong>Stripe Dashboard</strong></td>
+            <td>Payment</td>
+            <td><a href="https://dashboard.stripe.com/" target="_blank" class="tool-link-badge">Stripe Dashboard ↗</a><br>Obtain Publishable Key & Secret Key under Developers &rarr; API keys. Add webhook endpoint.</td>
+          </tr>
+          <tr>
+            <td><strong>PM2 Process Manager</strong></td>
+            <td>Production Daemon</td>
+            <td><a href="https://pm2.keymetrics.io/docs/usage/quick-start/" target="_blank" class="tool-link-badge">PM2 Quick Start ↗</a><br>Install globally via <code>npm install -g pm2</code> to keep your Node application running 24/7.</td>
+          </tr>
+          <tr>
+            <td><strong>Certbot (Let's Encrypt)</strong></td>
+            <td>Free SSL</td>
+            <td><a href="https://certbot.eff.org/" target="_blank" class="tool-link-badge">Certbot SSL Setup ↗</a><br>Generate free HTTPS certificates via <code>sudo certbot --nginx</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECTION 8: VPS & PM2 DEPLOYMENT -->
+    <section id="vps-setup">
+      <h2>8. VPS & PM2 Setup (Ubuntu/Debian Production Guide)</h2>
+      <p>Recommended production deployment using Nginx reverse proxy and PM2 process manager:</p>
+      <div class="step-list">
+        <div class="step-item">
+          <h4>Install Node.js, Nginx & PM2</h4>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs nginx git
+sudo npm install -g pm2</code></pre>
+        </div>
+        <div class="step-item">
+          <h4>Build and Start with PM2</h4>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>npm install
+npm run build
+pm2 start npm --name "wecanfix" -- start
+pm2 save
+pm2 startup</code></pre>
+        </div>
+        <div class="step-item">
+          <h4>Configure Nginx Reverse Proxy</h4>
+          <p>Create <code>/etc/nginx/sites-available/wecanfix</code>:</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>server {
+    server_name yourdomain.com www.yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3006;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}</code></pre>
+          <p>Enable the site and issue SSL:</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>sudo ln -s /etc/nginx/sites-available/wecanfix /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 9: LOCAL STANDALONE BUILD -->
+    <section id="local-build-setup">
+      <h2>9. Local Standalone Build (For Low-RAM VPS)</h2>
+      <p>If your VPS has limited RAM (1GB or less), you can build the Next.js standalone package on your local computer and upload only the lightweight build artifacts:</p>
+      <ol>
+        <li>Run <code>npm run build</code> locally on your machine.</li>
+        <li>Next.js will generate a self-contained bundle in <code>.next/standalone</code>.</li>
+        <li>Copy <code>public/</code> and <code>.next/static/</code> into <code>.next/standalone/</code>.</li>
+        <li>Upload the lightweight <code>standalone</code> folder to your VPS and start via <code>node server.js</code>.</li>
+      </ol>
+    </section>
+
+    <!-- SECTION 10: REMOTE DATABASE SETUP -->
+    <section id="shared-hosting">
+      <h2>10. Remote Database Setup (Shared Hosting DB)</h2>
+      <p>If hosting the MySQL database on cPanel shared hosting while running Next.js on a VPS:</p>
+      <ol>
+        <li>Log into cPanel &rarr; <strong>Remote MySQL</strong>.</li>
+        <li>Add your VPS Public IP address to the whitelist.</li>
+        <li>Update <code>DATABASE_URL</code> in your VPS <code>.env</code> with the shared hosting domain/IP.</li>
+      </ol>
+    </section>
+
+    <!-- SECTION 11: CRON JOBS SETUP -->
+    <section id="cron-jobs">
+      <h2>11. Cron Jobs Setup</h2>
+      <p>Automate slot calculation, booking status checks, and reminder notifications by configuring cron jobs:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint</th>
+            <th>Recommended Schedule</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>/api/cron/check-slots</code></td>
+            <td>Every 15 minutes (<code>*/15 * * * *</code>)</td>
+            <td>Recalculates dynamic slot availability</td>
+          </tr>
+          <tr>
+            <td><code>/api/cron/reminders</code></td>
+            <td>Every hour (<code>0 * * * *</code>)</td>
+            <td>Sends upcoming service reminders</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Example Crontab Entry on Linux VPS (<code>crontab -e</code>):</p>
+      <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>*/15 * * * * curl -s "https://yourdomain.com/api/cron/check-slots?secret=YOUR_CRON_SECRET" > /dev/null 2>&1</code></pre>
+    </section>
+
+    <!-- SECTION 12: PAYMENTS & SETTINGS -->
+    <section id="admin-gateways">
+      <h2>12. Payments & Settings Integration</h2>
+      <h3>Razorpay Setup</h3>
+      <p>In Super Admin Panel &rarr; <strong>Platform Settings &rarr; Payments</strong>:</p>
+      <ul>
+        <li>Enable Razorpay toggle.</li>
+        <li>Enter <strong>Key ID</strong> and <strong>Key Secret</strong> from Razorpay Dashboard.</li>
+        <li>Webhook URL: <code>https://yourdomain.com/api/payment/razorpay/webhook</code></li>
+      </ul>
+
+      <h3>Stripe Setup</h3>
+      <p>In Super Admin Panel &rarr; <strong>Platform Settings &rarr; Payments</strong>:</p>
+      <ul>
+        <li>Enable Stripe toggle.</li>
+        <li>Enter <strong>Publishable Key</strong> and <strong>Secret Key</strong>.</li>
+        <li>Webhook URL: <code>https://yourdomain.com/api/payment/stripe/webhook</code></li>
+      </ul>
+    </section>
+
+    <!-- SECTION 13: REMOTE MEDIA STORAGE -->
+    <section id="remote-media">
+      <h2>13. Remote Media Storage Setup</h2>
+      <p>To offload user uploads to a shared hosting subdomain (e.g. <code>uploads.yourdomain.com</code>):</p>
+      <ol>
+        <li>Upload <code>Documentation/SHARED_HOSTING_MEDIA_UPLOAD_SCRIPT.php</code> to your subdomain root as <code>upload.php</code>.</li>
+        <li>In Admin Panel &rarr; <strong>Platform Settings &rarr; Remote Storage</strong>, set your upload endpoint and API key.</li>
+      </ol>
+    </section>
+
+    <!-- SECTION 14: TROUBLESHOOTING GUIDE -->
+    <section id="troubleshooting">
+      <h2>🛠️ Comprehensive Troubleshooting Guide (Common Installation Errors)</h2>
+      <p>Solutions for the most common installation, build, database, and third-party configuration scenarios:</p>
+
+      <!-- Item 1 -->
+      <div class="troubleshoot-item">
+        <div class="troubleshoot-header" onclick="toggleAccordion(this)">
+          <div>
+            <span class="troubleshoot-badge-error">ECONNREFUSED</span>
+            <span>1. Database Connection Refused / ER_ACCESS_DENIED_ERROR</span>
+          </div>
+          <span>▼</span>
+        </div>
+        <div class="troubleshoot-body">
+          <p><strong>Cause:</strong> MySQL server is stopped, user credentials in <code>.env</code> are incorrect, or MySQL is not accepting connections on port 3306.</p>
+          <p><strong>Fix:</strong></p>
+          <ol>
+            <li>Verify MySQL is running: <code>sudo systemctl status mysql</code> (start with <code>sudo systemctl start mysql</code>).</li>
+            <li>Test connection in terminal: <code>mysql -u wecanfix_user -p -h 127.0.0.1 wecanfix</code>.</li>
+            <li>Ensure <code>DATABASE_URL</code> in <code>.env</code> matches: <code>mysql://wecanfix_user:password@127.0.0.1:3306/wecanfix</code>.</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Item 2 -->
+      <div class="troubleshoot-item">
+        <div class="troubleshoot-header" onclick="toggleAccordion(this)">
+          <div>
+            <span class="troubleshoot-badge-error">BUILD ERROR</span>
+            <span>2. JavaScript Heap Out of Memory during 'npm run build'</span>
+          </div>
+          <span>▼</span>
+        </div>
+        <div class="troubleshoot-body">
+          <p><strong>Cause:</strong> Node.js memory limit (default 1.5GB) reached during webpack compilation on lower-RAM servers.</p>
+          <p><strong>Fix:</strong> Increase the Node memory allocation flag before running build:</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>export NODE_OPTIONS="--max-old-space-size=4096"
+npm run build</code></pre>
+        </div>
+      </div>
+
+      <!-- Item 3 -->
+      <div class="troubleshoot-item">
+        <div class="troubleshoot-header" onclick="toggleAccordion(this)">
+          <div>
+            <span class="troubleshoot-badge-error">NGINX 502</span>
+            <span>3. Nginx 502 Bad Gateway / Application Not Reachable</span>
+          </div>
+          <span>▼</span>
+        </div>
+        <div class="troubleshoot-body">
+          <p><strong>Cause:</strong> Node process is not running or listening on a different port than configured in Nginx.</p>
+          <p><strong>Fix:</strong></p>
+          <ol>
+            <li>Check PM2 status: <code>pm2 status</code> and logs: <code>pm2 logs wecanfix</code>.</li>
+            <li>Verify application port in <code>package.json</code> (default <code>3006</code>).</li>
+            <li>Ensure <code>proxy_pass http://127.0.0.1:3006;</code> in Nginx configuration matches the port.</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Item 4 -->
+      <div class="troubleshoot-item">
+        <div class="troubleshoot-header" onclick="toggleAccordion(this)">
+          <div>
+            <span class="troubleshoot-badge-error">FIREBASE KEY</span>
+            <span>4. Firebase Admin SDK "Failed to parse private key"</span>
+          </div>
+          <span>▼</span>
+        </div>
+        <div class="troubleshoot-body">
+          <p><strong>Cause:</strong> Line breaks in RSA Private Key are escaped as literal <code>\n</code> strings inside <code>.env</code>.</p>
+          <p><strong>Fix:</strong> Enclose the private key in double quotes in your <code>.env</code> file:</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----\n"</code></pre>
+        </div>
+      </div>
+
+      <!-- Item 5 -->
+      <div class="troubleshoot-item">
+        <div class="troubleshoot-header" onclick="toggleAccordion(this)">
+          <div>
+            <span class="troubleshoot-badge-error">GOOGLE MAPS</span>
+            <span>5. "This page can't load Google Maps correctly" / ApiNotActivatedMapError</span>
+          </div>
+          <span>▼</span>
+        </div>
+        <div class="troubleshoot-body">
+          <p><strong>Cause:</strong> Maps JavaScript API or Places API is not enabled in Google Cloud Console, or billing is not linked.</p>
+          <p><strong>Fix:</strong></p>
+          <ol>
+            <li>Open <a href="https://console.cloud.google.com/apis/library" target="_blank">Google Cloud API Library</a>.</li>
+            <li>Enable: <strong>Maps JavaScript API</strong>, <strong>Places API</strong>, and <strong>Geocoding API</strong>.</li>
+            <li>Ensure a valid Cloud Billing account is attached to your Google Cloud project.</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Item 6 -->
+      <div class="troubleshoot-item">
+        <div class="troubleshoot-header" onclick="toggleAccordion(this)">
+          <div>
+            <span class="troubleshoot-badge-error">WEBHOOK 400</span>
+            <span>6. Stripe or Razorpay Webhook Signature Verification Failed</span>
+          </div>
+          <span>▼</span>
+        </div>
+        <div class="troubleshoot-body">
+          <p><strong>Cause:</strong> Webhook secret in admin settings does not match the signing secret generated by Stripe/Razorpay.</p>
+          <p><strong>Fix:</strong></p>
+          <ol>
+            <li>Copy the exact Webhook Signing Secret (starts with <code>whsec_...</code> on Stripe).</li>
+            <li>Paste it under Admin Panel &rarr; <strong>Platform Settings &rarr; Payments &rarr; Stripe Webhook Secret</strong>.</li>
+            <li>Ensure your domain has valid HTTPS SSL (webhooks fail over plain HTTP).</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Item 7 -->
+      <div class="troubleshoot-item">
+        <div class="troubleshoot-header" onclick="toggleAccordion(this)">
+          <div>
+            <span class="troubleshoot-badge-error">413 PAYLOAD</span>
+            <span>7. 413 Request Entity Too Large on Image / Document Uploads</span>
+          </div>
+          <span>▼</span>
+        </div>
+        <div class="troubleshoot-body">
+          <p><strong>Cause:</strong> Nginx default upload limit is 1MB.</p>
+          <p><strong>Fix:</strong> Add <code>client_max_body_size 64M;</code> inside your Nginx server block:</p>
+          <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>server {
+    ...
+    client_max_body_size 64M;
+    ...
+}</code></pre>
+          <p>Then reload Nginx: <code>sudo systemctl reload nginx</code>.</p>
+        </div>
+      </div>
+
+      <!-- Item 8 -->
+      <div class="troubleshoot-item">
+        <div class="troubleshoot-header" onclick="toggleAccordion(this)">
+          <div>
+            <span class="troubleshoot-badge-error">PWA SSL</span>
+            <span>8. Push Notifications / Service Worker Not Registering</span>
+          </div>
+          <span>▼</span>
+        </div>
+        <div class="troubleshoot-body">
+          <p><strong>Cause:</strong> Service Workers and Web Push notifications require a secure origin (<code>https://</code> or <code>localhost</code>).</p>
+          <p><strong>Fix:</strong> Install an SSL certificate on your production domain using Certbot (<code>sudo certbot --nginx</code>). Service workers will automatically register upon first visit.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 15: WHITE-LABELING -->
+    <section id="branding">
+      <h2>15. Custom Branding & White-Labeling Setup</h2>
+      <p>To rebrand WeCanFix for your company:</p>
+      <ol>
+        <li>Replace logo files in <code>public/</code>: <code>favicon.ico</code>, <code>apple-touch-icon.png</code>, <code>pwa-192x192.png</code>, and <code>pwa-512x512.png</code>.</li>
+        <li>Update website name and SEO meta details in Super Admin Panel &rarr; <strong>Web Settings</strong>.</li>
+        <li>Customize primary brand theme colors in Admin Panel &rarr; <strong>Theme Settings</strong>.</li>
+      </ol>
+    </section>
+
+    <!-- SECTION 16: COST DISCLAIMERS -->
+    <section id="disclaimers">
+      <h2>16. Third-Party Cost Disclaimers</h2>
+      <p>WeCanFix connects to external APIs that may charge usage-based fees depending on your volume. These fees are independent of the item purchase price:</p>
+      <ul>
+        <li><strong>Firebase:</strong> Phone OTP verification is subject to Firebase monthly active user tiers.</li>
+        <li><strong>Google Maps Platform:</strong> Maps and Places API calls are subject to Google Cloud billing credits and quotas.</li>
+        <li><strong>Razorpay / Stripe:</strong> Standard per-transaction payment processing fees apply.</li>
+        <li><strong>Google Gemini AI:</strong> Token usage subject to Google AI Studio / Gemini API rate plans.</li>
+      </ul>
+    </section>
+
+    <!-- SECTION 17: FAQ & SUPPORT -->
+    <section id="support">
+      <h2>17. FAQ & Official Support</h2>
+      <h3>Frequently Asked Questions:</h3>
+      <ul>
+        <li><strong>Can I deploy on Shared Hosting?</strong> Yes, if your cPanel shared hosting provides Node.js Selector (Node.js 18+). Alternatively, deploy on a $5/mo Linux VPS for best performance.</li>
+        <li><strong>Are mobile apps included?</strong> WeCanFix includes installable Progressive Web Apps (PWA) with push notifications for iOS and Android out of the box.</li>
+        <li><strong>Is the source code unminified?</strong> Yes, 100% original, unminified TypeScript/React source code is included.</li>
+      </ul>
+
+      <div class="alert alert-note">
+        <div class="alert-title">Need Assistance?</div>
+        <p>If you encounter any questions or require custom setup assistance, reach out via our CodeCanyon item support tab or email our dedicated support team.</p>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    function copyCode(btn) {
+      const codeBlock = btn.nextElementSibling;
+      const text = codeBlock.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = 'Copy'; }, 2000);
+      });
+    }
+
+    function toggleAccordion(header) {
+      const body = header.nextElementSibling;
+      const icon = header.querySelector('span:last-child');
+      if (body.style.display === 'none' || !body.style.display) {
+        body.style.display = 'block';
+        icon.innerText = '▲';
+      } else {
+        body.style.display = 'none';
+        icon.innerText = '▼';
+      }
+    }
+
+    function filterMenu() {
+      const query = document.getElementById('searchMenu').value.toLowerCase();
+      const items = document.querySelectorAll('.menu-item');
+      items.forEach(item => {
+        const text = item.innerText.toLowerCase();
+        item.style.display = text.includes(query) ? 'block' : 'none';
+      });
+    }
+
+    // Initialize all troubleshooting accordions to closed by default
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.troubleshoot-body').forEach(b => {
+        b.style.display = 'none';
+      });
+    });
+  </script>
+</body>
+</html>
