@@ -135,27 +135,38 @@ export async function calculateServerBookingTotal(
   let totalBasePlatformFees = 0;
   let totalTaxOnPlatformFees = 0;
 
-  if (appConfig.enablePlatformFee && Array.isArray(appConfig.platformFees)) {
-    for (const fee of appConfig.platformFees) {
-      if (!fee.isActive) continue;
+  const rawPlatformFees = appConfig.platformFees;
+  const platformFeesList: any[] = Array.isArray(rawPlatformFees)
+    ? rawPlatformFees
+    : (rawPlatformFees && typeof rawPlatformFees === 'object' ? Object.values(rawPlatformFees) : []);
+
+  const isPlatformFeeGloballyEnabled = appConfig.enablePlatformFee !== false;
+
+  // Platform fees apply when enabled and visiting charge is not applied (matching client rules across checkout & admin)
+  if (isPlatformFeeGloballyEnabled && baseVisitingCharge === 0 && platformFeesList.length > 0) {
+    for (const fee of platformFeesList) {
+      if (!fee || fee.isActive === false || fee.isActive === 'false') continue;
 
       let feeAmount = 0;
       if (fee.type === 'percentage') {
-        feeAmount = (baseSubTotal * (fee.value || 0)) / 100;
+        feeAmount = (sumOfDisplayedItemPrices * (Number(fee.value) || 0)) / 100;
       } else {
-        feeAmount = fee.value || 0;
+        feeAmount = Number(fee.value) || 0;
       }
 
-      const taxRate = fee.taxRate || 0;
+      const taxRate = typeof fee.feeTaxRatePercent === 'number'
+        ? fee.feeTaxRatePercent
+        : (typeof fee.taxRate === 'number' ? fee.taxRate : 0);
       const taxAmount = (feeAmount * taxRate) / 100;
 
       appliedPlatformFees.push({
         name: fee.name || 'Platform Fee',
         type: fee.type || 'fixed',
-        valueApplied: fee.value || 0,
-        calculatedFeeAmount: feeAmount,
+        valueApplied: Number(fee.value) || 0,
+        calculatedFeeAmount: Number(feeAmount.toFixed(2)),
         taxRatePercentOnFee: taxRate,
-        taxAmountOnFee: taxAmount,
+        taxAmountOnFee: Number(taxAmount.toFixed(2)),
+        amount: Number((feeAmount + taxAmount).toFixed(2)),
       });
 
       totalBasePlatformFees += feeAmount;

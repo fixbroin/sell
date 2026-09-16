@@ -309,6 +309,9 @@ export const generateProviderApplicationPdf = async (
   // Section 4: Work Location & Bank Details
   y = checkAndAddPage(doc, y, 30);
   y = addSectionTitle(doc, "4. Service Area & Bank Details", y);
+  if (application.workAreaAddress) {
+    y = addDetail(doc, "Work Location / Zone", application.workAreaAddress, y);
+  }
   y = addDetail(doc, "Work Area Center (Lat, Long)", application.workAreaCenter ? `${application.workAreaCenter.latitude.toFixed(6)}, ${application.workAreaCenter.longitude.toFixed(6)}` : "N/A", y);
   y = addDetail(doc, "Service Radius (Kilometers)", application.workAreaRadiusKm ? `${application.workAreaRadiusKm} km` : "N/A", y);
   y += 4; 

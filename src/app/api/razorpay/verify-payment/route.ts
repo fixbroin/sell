@@ -82,7 +82,19 @@ export async function POST(req: NextRequest) {
           // Confirm booking authoritatively on server
           const nextBookingNumber = await assignNewBookingNumber();
 
-          await bookingRef.update({
+          let effectiveUserId = bookingData.userId;
+          if (!effectiveUserId && bookingData.customerEmail) {
+            try {
+              const userSnap = await adminDb.collection('users').where('email', '==', bookingData.customerEmail.toLowerCase().trim()).limit(1).get();
+              if (!userSnap.empty) {
+                effectiveUserId = userSnap.docs[0].id;
+              }
+            } catch (userLookupErr) {
+              console.warn('Error resolving user by email in razorpay verify:', userLookupErr);
+            }
+          }
+
+          const updateFields: any = {
             status: 'Confirmed',
             bookingNumber: nextBookingNumber,
             paymentMethod: 'Online',
@@ -90,17 +102,17 @@ export async function POST(req: NextRequest) {
             razorpayOrderId: razorpay_order_id,
             razorpaySignature: razorpay_signature,
             updatedAt: Timestamp.now(),
-          });
+          };
+          if (effectiveUserId && !bookingData.userId) {
+            updateFields.userId = effectiveUserId;
+          }
+
+          await bookingRef.update(updateFields);
 
           updatedBooking = {
             ...bookingData,
             id: bookingId,
-            status: 'Confirmed',
-            bookingNumber: nextBookingNumber,
-            paymentMethod: 'Online',
-            razorpayPaymentId: razorpay_payment_id,
-            razorpayOrderId: razorpay_order_id,
-            razorpaySignature: razorpay_signature,
+            ...updateFields,
           };
 
           // Trigger Server Post-Processing (Auto dispatch, notification, WhatsApp)

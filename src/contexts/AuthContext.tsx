@@ -257,6 +257,10 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
         role = 'provider';
       }
       localStorage.setItem('yourbrand_user_role', role);
+      localStorage.setItem('yourbrand_user_uid', user.uid);
+      if (user.email) {
+        localStorage.setItem('yourbrand_user_email', user.email);
+      }
 
       const name = firestoreUser?.displayName || user.displayName || '';
       if (name) {
@@ -266,6 +270,8 @@ export const AuthProvider: React.FC<PropsWithChildren> = ({ children }) => {
       if (isInitialAuthCheckComplete) {
         localStorage.removeItem('yourbrand_user_role');
         localStorage.removeItem('yourbrand_user_name');
+        localStorage.removeItem('yourbrand_user_uid');
+        localStorage.removeItem('yourbrand_user_email');
       }
     }
   }, [user, adminRole, providerStatus, firestoreUser, isInitialAuthCheckComplete]);

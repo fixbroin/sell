@@ -41,23 +41,36 @@ export async function GET(req: NextRequest) {
             const nextBookingNumber = await assignNewBookingNumber();
             const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : session.id;
 
-            await bookingRef.update({
+            let effectiveUserId = bookingData.userId;
+            if (!effectiveUserId && bookingData.customerEmail) {
+              try {
+                const userSnap = await adminDb.collection('users').where('email', '==', bookingData.customerEmail.toLowerCase().trim()).limit(1).get();
+                if (!userSnap.empty) {
+                  effectiveUserId = userSnap.docs[0].id;
+                }
+              } catch (userLookupErr) {
+                console.warn('Error resolving user by email in stripe verify:', userLookupErr);
+              }
+            }
+
+            const updateFields: any = {
               status: 'Confirmed',
               bookingNumber: nextBookingNumber,
               paymentMethod: 'Online',
               stripeSessionId: session.id,
               stripePaymentIntent: paymentIntentId,
               updatedAt: Timestamp.now(),
-            });
+            };
+            if (effectiveUserId && !bookingData.userId) {
+              updateFields.userId = effectiveUserId;
+            }
+
+            await bookingRef.update(updateFields);
 
             updatedBooking = {
               ...bookingData,
               id: bookingId,
-              status: 'Confirmed',
-              bookingNumber: nextBookingNumber,
-              paymentMethod: 'Online',
-              stripeSessionId: session.id,
-              stripePaymentIntent: paymentIntentId,
+              ...updateFields,
             };
 
             // Trigger Post-Processing

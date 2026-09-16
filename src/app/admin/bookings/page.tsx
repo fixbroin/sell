@@ -86,15 +86,15 @@ const getCoverageBadge = (booking: FirestoreBooking) => {
     return null;
 };
 
-const getPaymentBadgeClass = (method: string | undefined, status: string) => {
+const getPaymentBadgeClass = (method: string | undefined, status: string, booking?: any) => {
     if (status === 'Completed') return 'bg-green-50 text-green-700 border-green-200 hover:bg-green-50';
-    const isOnline = (method || '').toLowerCase().trim() === 'online';
+    const isOnline = (method || '').toLowerCase().trim() === 'online' || !!booking?.razorpayPaymentId || !!booking?.stripePaymentIntent || !!booking?.stripeSessionId;
     if (!isOnline) return 'bg-red-50 text-red-700 border-red-200 hover:bg-red-50';
     return 'bg-green-50 text-green-700 border-green-200 hover:bg-green-50';
 };
 
-const getPaymentLabel = (method: string | undefined, status: string) => {
-    const isOnline = (method || '').toLowerCase().trim() === 'online';
+const getPaymentLabel = (method: string | undefined, status: string, booking?: any) => {
+    const isOnline = (method || '').toLowerCase().trim() === 'online' || !!booking?.razorpayPaymentId || !!booking?.stripePaymentIntent || !!booking?.stripeSessionId;
     const label = isOnline ? 'Online' : 'Pay After Service';
     if (status !== 'Completed') return label;
     if (!isOnline) return "Paid (Pay After Service)";
@@ -642,7 +642,7 @@ export default function AdminBookingsPage() {
             </div>
             <div className="flex justify-between items-center text-xs py-1 border-t border-muted/30 mt-1 pt-1">
                 <span className="text-muted-foreground">Payment:</span>
-                <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-tighter", getPaymentBadgeClass(booking.paymentMethod, booking.status))}>{getPaymentLabel(booking.paymentMethod, booking.status)}</Badge>
+                <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-tighter", getPaymentBadgeClass(booking.paymentMethod, booking.status, booking))}>{getPaymentLabel(booking.paymentMethod, booking.status, booking)}</Badge>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground break-all mt-1">
                 <Mail className="h-3.5 w-3.5 text-primary" /> {booking.customerEmail}
@@ -853,8 +853,8 @@ export default function AdminBookingsPage() {
 )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-tighter shadow-sm", getPaymentBadgeClass(b.paymentMethod, b.status))}>
-                              {getPaymentLabel(b.paymentMethod, b.status)}
+                            <Badge variant="outline" className={cn("text-[10px] font-bold uppercase tracking-tighter shadow-sm", getPaymentBadgeClass(b.paymentMethod, b.status, b))}>
+                              {getPaymentLabel(b.paymentMethod, b.status, b)}
                             </Badge>
                           </TableCell>
                           <TableCell className="max-w-[200px] truncate text-xs font-medium">{b.services.map(s => s.name).join(', ')}</TableCell>

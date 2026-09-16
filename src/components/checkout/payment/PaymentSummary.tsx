@@ -12,7 +12,7 @@ import { formatCurrency } from '@/lib/utils';
 import { useApplicationConfig } from '@/hooks/useApplicationConfig';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
 import { db, auth } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, Timestamp, addDoc } from '@/lib/mysqlDb';
+import { doc, getDoc, collection, query, where, getDocs, Timestamp, addDoc, deleteDoc } from '@/lib/mysqlDb';
 import type { FirestoreService, AppliedPlatformFeeItem } from '@/types/firestore';
 import { getActiveCheckoutEntries, type CartEntry } from '@/lib/cartManager';
 import TaxBreakdownDisplay from '@/components/shared/TaxBreakdownDisplay';
@@ -354,6 +354,116 @@ export default function PaymentSummary({ paymentMethod, canBook, appliedPromo, o
     document.body.appendChild(script);
   });
 
+  const createPendingBookingRecord = async () => {
+    const newBookingId = generateBookingId();
+    
+    let customerEmail = "";
+    let customerName = "Guest User", customerPhone = "N/A", addressLine1 = "N/A", addressLine2: string | undefined, city = "N/A", state = "N/A", pincode = "N/A";
+    let latitude: number | undefined, longitude: number | undefined;
+    let bookingDiscountCode: string | undefined, bookingDiscountAmount: number | undefined, appliedPromoCodeId: string | undefined;
+    let storedAppliedPlatformFees: AppliedPlatformFeeItem[] = [];
+    let estimatedEndTime: string | undefined;
+    let currentCategoryId: string | null = null;
+    let storedInterveningBreaks: any[] = [];
+    let storedDailyTimeline: any[] = [];
+
+    if (typeof window !== 'undefined') {
+      const storedEmail = localStorage.getItem('yourbrandCustomerEmail');
+      customerEmail = (storedEmail && storedEmail.trim()) ? storedEmail : (auth.currentUser?.email || "");
+      currentCategoryId = localStorage.getItem('yourbrandActiveCheckoutCategory');
+      const breaksStr = localStorage.getItem('yourbrandInterveningBreaks');
+      if (breaksStr) { try { storedInterveningBreaks = JSON.parse(breaksStr); } catch (e) {} }
+      const dailyTimelineStr = localStorage.getItem('yourbrandDailyTimeline');
+      if (dailyTimelineStr) { try { storedDailyTimeline = JSON.parse(dailyTimelineStr); } catch (e) {} }
+      bookingDiscountCode = localStorage.getItem('yourbrandBookingDiscountCode') || undefined;
+      const discountAmountStr = localStorage.getItem('yourbrandBookingDiscountAmount');
+      bookingDiscountAmount = discountAmountStr ? parseFloat(discountAmountStr) : undefined;
+      appliedPromoCodeId = localStorage.getItem('yourbrandAppliedPromoCodeId') || undefined;
+      const platformFeesStr = localStorage.getItem('yourbrandAppliedPlatformFees');
+      if (platformFeesStr) { try { storedAppliedPlatformFees = JSON.parse(platformFeesStr); } catch (e) {} }
+      const addressDataString = localStorage.getItem('yourbrandCustomerAddress');
+      if (addressDataString) {
+        try {
+          const addressData = JSON.parse(addressDataString);
+          customerName = addressData.fullName || customerName;
+          customerPhone = addressData.phone || customerPhone;
+          customerEmail = addressData.email || customerEmail;
+          addressLine1 = addressData.addressLine1 || addressLine1;
+          addressLine2 = addressData.addressLine2 || undefined;
+          city = addressData.city || city;
+          state = addressData.state || state;
+          pincode = addressData.pincode || pincode;
+          latitude = addressData.latitude === null ? undefined : addressData.latitude;
+          longitude = addressData.longitude === null ? undefined : addressData.longitude;
+        } catch (e) {}
+      }
+    }
+
+    const bookingServices = cartEntries.map(entry => {
+      const detail = serviceDetailsMap[entry.serviceId];
+      if (!detail) return null;
+      const displayedPriceForQuantity = calculateIncrementalTotalPriceForItem(detail, entry.quantity);
+      const itemTaxRate = (detail.taxPercent || 0) > 0 ? (detail.taxPercent || 0) : 0;
+      const basePriceForQuantity = getBasePrice(displayedPriceForQuantity, detail.isTaxInclusive === true, itemTaxRate);
+      const taxAmountForItem = basePriceForQuantity * (itemTaxRate / 100);
+
+      return {
+        serviceId: entry.serviceId,
+        name: detail.name,
+        quantity: entry.quantity,
+        pricePerUnit: displayedPriceForQuantity / entry.quantity,
+        discountedPricePerUnit: detail.discountedPrice || null,
+        isTaxInclusive: detail.isTaxInclusive === true,
+        taxPercentApplied: itemTaxRate,
+        taxAmountForItem: taxAmountForItem,
+        imageUrl: detail.imageUrl || null
+      };
+    }).filter(Boolean);
+
+    const totalPlatformFeeBaseAmount = calculatedPlatformFees.reduce((sum, fee) => sum + fee.calculatedFeeAmount, 0);
+    const totalTaxOnPlatformFees = calculatedPlatformFees.reduce((sum, fee) => sum + fee.taxAmountOnFee, 0);
+
+    const effectiveUserId = auth.currentUser?.uid || (typeof window !== 'undefined' ? localStorage.getItem('yourbrand_user_uid') : null) || undefined;
+
+    const newBookingData = {
+      bookingId: newBookingId,
+      bookingNumber: 0,
+      ...(effectiveUserId && { userId: effectiveUserId }),
+      customerName,
+      customerEmail,
+      customerPhone,
+      addressLine1,
+      ...(addressLine2 && { addressLine2 }),
+      city,
+      state,
+      pincode,
+      ...(latitude !== undefined && { latitude }),
+      ...(longitude !== undefined && { longitude }),
+      scheduledDate: localStorage.getItem('yourbrandScheduledDate') || "",
+      scheduledTimeSlot: localStorage.getItem('yourbrandScheduledTimeSlot') || "",
+      estimatedEndTime: localStorage.getItem('yourbrandEstimatedEndTime') || null,
+      interveningBreaks: storedInterveningBreaks,
+      dailyTimeline: storedDailyTimeline,
+      services: bookingServices,
+      subTotal: subTotal,
+      ...(visitingCharge > 0 && { visitingCharge: visitingCharge }),
+      taxAmount: taxAmount,
+      totalAmount: totalAmountDue,
+      platformFeeTotal: totalPlatformFeeBaseAmount + totalTaxOnPlatformFees,
+      ...(appliedPromo && { discountCode: appliedPromo.code }),
+      ...(discountAmount > 0 && { discountAmount: discountAmount }),
+      ...(calculatedPlatformFees.length > 0 && { appliedPlatformFees: calculatedPlatformFees }),
+      paymentMethod: 'Online',
+      status: 'Pending Payment',
+      createdAt: Timestamp.now(),
+      isReviewedByCustomer: false,
+      workCategoryId: currentCategoryId || undefined,
+    };
+
+    const docRef = await addDoc(collection(db, "bookings"), newBookingData);
+    return { docRef, newBookingId, customerName, customerEmail, customerPhone };
+  };
+
   const handleRazorpayCheckout = async () => {
     setIsProcessingPayment(true);
     showLoading();
@@ -366,6 +476,8 @@ export default function PaymentSummary({ paymentMethod, canBook, appliedPromo, o
       return;
     }
 
+    let pendingBookingDocId: string | null = null;
+
     try {
       const getCurrencySubunitDecimals = (currencyCode: string): number => {
         const c = currencyCode.toUpperCase();
@@ -375,26 +487,32 @@ export default function PaymentSummary({ paymentMethod, canBook, appliedPromo, o
       };
       const currencyDecimals = getCurrencySubunitDecimals(code);
 
+      const { docRef, customerName, customerEmail, customerPhone } = await createPendingBookingRecord();
+      pendingBookingDocId = docRef.id;
+
       const res = await fetch('/api/razorpay/create-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
               amount: Math.round(totalAmountDue * Math.pow(10, currencyDecimals)),
-              currency: code
+              currency: code,
+              notes: {
+                type: 'booking',
+                bookingId: pendingBookingDocId,
+                amount: totalAmountDue.toString()
+              }
           }),
       });
-      const orderDetails = await res.json();
 
-      let customerName = "Guest", customerEmail = "guest@example.com", customerContact = undefined;
-      const customerAddressDataString = localStorage.getItem('yourbrandCustomerAddress');
-      if (customerAddressDataString) {
-        try {
-          const addr = JSON.parse(customerAddressDataString);
-          customerName = addr.fullName || customerName;
-          customerEmail = addr.email || customerEmail;
-          customerContact = addr.phone || undefined;
-        } catch (e) {}
+      if (!res.ok) {
+        if (pendingBookingDocId) {
+          try { await deleteDoc(doc(db, 'bookings', pendingBookingDocId)); } catch (e) {}
+        }
+        const errorResult = await res.json();
+        throw new Error(errorResult.error || 'Failed to create Razorpay order.');
       }
+
+      const orderDetails = await res.json();
 
       const options = {
         key: appConfig.razorpayKeyId,
@@ -409,26 +527,52 @@ export default function PaymentSummary({ paymentMethod, canBook, appliedPromo, o
           localStorage.setItem('razorpaySignature', response.razorpay_signature);
           localStorage.setItem('yourbrandPaymentMethod', 'Online');
           localStorage.setItem('yourbrandFinalBookingTotal', totalAmountDue.toString());
+          if (pendingBookingDocId) {
+            localStorage.setItem('pendingBookingDocId', pendingBookingDocId);
+          }
           if (appliedPromo) {
             localStorage.setItem('yourbrandBookingDiscountCode', appliedPromo.code);
             localStorage.setItem('yourbrandBookingDiscountAmount', appliedPromo.calculatedDiscount.toString());
             localStorage.setItem('yourbrandAppliedPromoCodeId', appliedPromo.id);
           }
           if (calculatedPlatformFees.length > 0) localStorage.setItem('yourbrandAppliedPlatformFees', JSON.stringify(calculatedPlatformFees));
-          router.push('/checkout/thank-you');
+          router.push(`/checkout/thank-you?payment_method=razorpay&bookingId=${pendingBookingDocId}`);
         },
         prefill: {
           name: customerName,
           email: customerEmail,
-          contact: customerContact
+          contact: customerPhone !== 'N/A' ? customerPhone : undefined
+        },
+        notes: {
+          type: 'booking',
+          bookingId: pendingBookingDocId
         },
         theme: { color: "#45A0A2" },
-        modal: { ondismiss: () => { setIsProcessingPayment(false); hideLoading(); }}
+        modal: { 
+          ondismiss: async () => { 
+            setIsProcessingPayment(false); 
+            hideLoading(); 
+            if (pendingBookingDocId) {
+              try {
+                const bRef = doc(db, 'bookings', pendingBookingDocId);
+                const bSnap = await getDoc(bRef);
+                if (bSnap.exists() && bSnap.data()?.status === 'Pending Payment') {
+                  await deleteDoc(bRef);
+                }
+              } catch (e) {
+                console.error("Error cleaning up dismissed booking:", e);
+              }
+            }
+          }
+        }
       };
       const rzp = new window.Razorpay(options);
       rzp.open();
-    } catch (e) {
-      toast({ title: "Payment Error", variant: "destructive" });
+    } catch (e: any) {
+      if (pendingBookingDocId) {
+        try { await deleteDoc(doc(db, 'bookings', pendingBookingDocId)); } catch (err) {}
+      }
+      toast({ title: "Payment Error", description: e.message || "Failed to initiate payment.", variant: "destructive" });
       setIsProcessingPayment(false);
       hideLoading();
     }
@@ -440,88 +584,7 @@ export default function PaymentSummary({ paymentMethod, canBook, appliedPromo, o
 
     try {
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
-      const newBookingId = generateBookingId();
-      
-      let customerEmail = "";
-      let customerName = "Guest User", customerPhone = "N/A", addressLine1 = "N/A", addressLine2: string | undefined, city = "N/A", state = "N/A", pincode = "N/A";
-      let latitude: number | undefined, longitude: number | undefined;
-      let bookingDiscountCode: string | undefined, bookingDiscountAmount: number | undefined, appliedPromoCodeId: string | undefined;
-      let storedAppliedPlatformFees: AppliedPlatformFeeItem[] = [];
-      let estimatedEndTime: string | undefined;
-      let currentCategoryId: string | null = null;
-      let storedInterveningBreaks: any[] = [];
-      let storedDailyTimeline: any[] = [];
-
-      if (typeof window !== 'undefined') {
-        const storedEmail = localStorage.getItem('yourbrandCustomerEmail');
-        customerEmail = (storedEmail && storedEmail.trim()) ? storedEmail : (auth.currentUser?.email || "");
-        currentCategoryId = localStorage.getItem('yourbrandActiveCheckoutCategory');
-        const breaksStr = localStorage.getItem('yourbrandInterveningBreaks');
-        if (breaksStr) { try { storedInterveningBreaks = JSON.parse(breaksStr); } catch (e) {} }
-        const dailyTimelineStr = localStorage.getItem('yourbrandDailyTimeline');
-        if (dailyTimelineStr) { try { storedDailyTimeline = JSON.parse(dailyTimelineStr); } catch (e) {} }
-        bookingDiscountCode = localStorage.getItem('yourbrandBookingDiscountCode') || undefined;
-        const discountAmountStr = localStorage.getItem('yourbrandBookingDiscountAmount');
-        bookingDiscountAmount = discountAmountStr ? parseFloat(discountAmountStr) : undefined;
-        appliedPromoCodeId = localStorage.getItem('yourbrandAppliedPromoCodeId') || undefined;
-        const platformFeesStr = localStorage.getItem('yourbrandAppliedPlatformFees');
-        if (platformFeesStr) { try { storedAppliedPlatformFees = JSON.parse(platformFeesStr); } catch (e) {} }
-        const addressDataString = localStorage.getItem('yourbrandCustomerAddress');
-        if (addressDataString) { const addressData = JSON.parse(addressDataString); customerName = addressData.fullName || customerName; customerPhone = addressData.phone || customerPhone; customerEmail = addressData.email || customerEmail; addressLine1 = addressData.addressLine1 || addressLine1; addressLine2 = addressData.addressLine2 || undefined; city = addressData.city || city; state = addressData.state || state; pincode = addressData.pincode || pincode; latitude = addressData.latitude === null ? undefined : addressData.latitude; longitude = addressData.longitude === null ? undefined : addressData.longitude; }
-      }
-
-      const bookingServices = cartEntries.map(entry => {
-        const detail = serviceDetailsMap[entry.serviceId];
-        if (!detail) return null;
-        const displayedPriceForQuantity = calculateIncrementalTotalPriceForItem(detail, entry.quantity);
-        const itemTaxRate = (detail.taxPercent || 0) > 0 ? (detail.taxPercent || 0) : 0;
-        const basePriceForQuantity = getBasePrice(displayedPriceForQuantity, detail.isTaxInclusive === true, itemTaxRate);
-        const taxAmountForItem = basePriceForQuantity * (itemTaxRate / 100);
-
-        return {
-          serviceId: entry.serviceId,
-          name: detail.name,
-          quantity: entry.quantity,
-          pricePerUnit: displayedPriceForQuantity / entry.quantity,
-          discountedPricePerUnit: detail.discountedPrice || null,
-          isTaxInclusive: detail.isTaxInclusive === true,
-          taxPercentApplied: itemTaxRate,
-          taxAmountForItem: taxAmountForItem,
-          imageUrl: detail.imageUrl || null
-        };
-      }).filter(Boolean);
-
-      const totalPlatformFeeBaseAmount = calculatedPlatformFees.reduce((sum, fee) => sum + fee.calculatedFeeAmount, 0);
-      const totalTaxOnPlatformFees = calculatedPlatformFees.reduce((sum, fee) => sum + fee.taxAmountOnFee, 0);
-
-      const newBookingData = {
-        bookingId: newBookingId,
-        bookingNumber: 0,
-        ...(auth.currentUser?.uid && { userId: auth.currentUser.uid }),
-        customerName, customerEmail, customerPhone, addressLine1, ...(addressLine2 && { addressLine2 }), city, state, pincode,
-        ...(latitude !== undefined && { latitude }), ...(longitude !== undefined && { longitude }),
-        scheduledDate: localStorage.getItem('yourbrandScheduledDate') || "",
-        scheduledTimeSlot: localStorage.getItem('yourbrandScheduledTimeSlot') || "",
-        estimatedEndTime: localStorage.getItem('yourbrandEstimatedEndTime') || null,
-        interveningBreaks: storedInterveningBreaks,
-        dailyTimeline: storedDailyTimeline,
-        services: bookingServices,
-        subTotal: subTotal,
-        ...(visitingCharge > 0 && { visitingCharge: visitingCharge }),
-        taxAmount: taxAmount,
-        totalAmount: totalAmountDue,
-        platformFeeTotal: totalPlatformFeeBaseAmount + totalTaxOnPlatformFees,
-        ...(appliedPromo && { discountCode: appliedPromo.code }),
-        ...(discountAmount > 0 && { discountAmount: discountAmount }),
-        ...(calculatedPlatformFees.length > 0 && { appliedPlatformFees: calculatedPlatformFees }),
-        paymentMethod: 'Online',
-        status: 'Pending Payment',
-        createdAt: Timestamp.now(),
-        isReviewedByCustomer: false,
-        workCategoryId: currentCategoryId || undefined,
-      };
-
-      const docRef = await addDoc(collection(db, "bookings"), newBookingData);
+      const { docRef } = await createPendingBookingRecord();
 
       const res = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
@@ -537,6 +600,7 @@ export default function PaymentSummary({ paymentMethod, canBook, appliedPromo, o
       });
 
       if (!res.ok) {
+        try { await deleteDoc(doc(db, 'bookings', docRef.id)); } catch (e) {}
         const err = await res.json();
         throw new Error(err.error || 'Failed to initiate Stripe checkout.');
       }
@@ -545,6 +609,7 @@ export default function PaymentSummary({ paymentMethod, canBook, appliedPromo, o
 
       localStorage.setItem('yourbrandPaymentMethod', 'Online');
       localStorage.setItem('yourbrandFinalBookingTotal', totalAmountDue.toString());
+      localStorage.setItem('pendingBookingDocId', docRef.id);
       if (appliedPromo) {
         localStorage.setItem('yourbrandBookingDiscountCode', appliedPromo.code);
         localStorage.setItem('yourbrandBookingDiscountAmount', appliedPromo.calculatedDiscount.toString());

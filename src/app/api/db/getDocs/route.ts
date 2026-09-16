@@ -47,6 +47,10 @@ export async function POST(request: NextRequest) {
               hasValidFilter = true;
               break;
             }
+            if (path === 'bookings' && c.field === 'customerEmail' && user.email && typeof c.value === 'string' && c.value.toLowerCase().trim() === user.email.toLowerCase().trim()) {
+              hasValidFilter = true;
+              break;
+            }
           }
         }
 

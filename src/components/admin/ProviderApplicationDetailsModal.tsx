@@ -784,6 +784,9 @@ export default function ProviderApplicationDetailsModal({
               <TabsContent value="bank" className="space-y-4 focus-visible:outline-none focus-visible:ring-0 mt-0 w-full">
                 <div className="space-y-1">
                   <h4 className="font-bold text-sm text-primary uppercase tracking-wider mb-2">Work Area</h4>
+                  {application.workAreaAddress && (
+                    <DetailRow label="Location / Zone" value={application.workAreaAddress} />
+                  )}
                   <DetailRow label="Center Coordinates" value={application.workAreaCenter ? `${application.workAreaCenter.latitude.toFixed(6)}, ${application.workAreaCenter.longitude.toFixed(6)}` : 'N/A'} />
                   <DetailRow label="Service Radius" value={application.workAreaRadiusKm ? `${application.workAreaRadiusKm} km` : 'N/A'} />
                   {application.workAreaCenter && (

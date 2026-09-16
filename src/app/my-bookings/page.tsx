@@ -151,19 +151,22 @@ export default function MyBookingsPage() {
 
     setIsLoadingBookings(true);
     const bookingsCollectionRef = collection(db, "bookings");
-    // Added limit(50) to prevent excessive reads while showing recent history
-    const q = query(
-      bookingsCollectionRef,
-      where("userId", "==", user.uid),
-      orderBy("createdAt", "desc"),
-      limit(20)
-    );
+    const userEmail = user.email ? user.email.toLowerCase().trim() : null;
 
-    const unsubscribe = onSnapshot(q, async (querySnapshot) => {
-      const fetchedBookings = querySnapshot.docs.map(docSnap => ({ 
+    const processAndSetBookings = async (docs: any[]) => {
+      const fetchedBookings = docs.map(docSnap => ({ 
         ...docSnap.data(),
         id: docSnap.id, 
       } as FirestoreBooking));
+
+      // Auto-link any matching email booking missing userId
+      if (user.uid) {
+        fetchedBookings.forEach(booking => {
+          if (!booking.userId && booking.customerEmail && userEmail && booking.customerEmail.toLowerCase().trim() === userEmail && booking.id) {
+            updateDoc(doc(db, "bookings", booking.id), { userId: user.uid }).catch(() => {});
+          }
+        });
+      }
 
       // Enrich bookings with provider details AND service images if missing
       const enrichedPromises = fetchedBookings.map(async (booking): Promise<EnrichedBooking> => {
@@ -204,14 +207,70 @@ export default function MyBookingsPage() {
       const resolvedBookings = await Promise.all(enrichedPromises);
       setMyBookings(resolvedBookings);
       setIsLoadingBookings(false);
+    };
 
+    const q = query(
+      bookingsCollectionRef,
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc"),
+      limit(50)
+    );
+
+    let isSubscribed = true;
+
+    const fetchAllUserBookings = async () => {
+      try {
+        const uidSnap = await getDocs(q);
+        const bookingMap = new Map<string, any>();
+        uidSnap.docs.forEach(d => bookingMap.set(d.id, d));
+
+        // If user has email, also query by customerEmail to catch any legacy/unlinked bookings
+        if (userEmail) {
+          try {
+            const emailQuery = query(
+              bookingsCollectionRef,
+              where("customerEmail", "==", userEmail),
+              orderBy("createdAt", "desc"),
+              limit(50)
+            );
+            const emailSnap = await getDocs(emailQuery);
+            emailSnap.docs.forEach(d => bookingMap.set(d.id, d));
+          } catch (e) {
+            console.warn("Could not query bookings by email:", e);
+          }
+        }
+
+        const combinedDocs = Array.from(bookingMap.values());
+        combinedDocs.sort((a, b) => {
+          const aTime = getTimestampMillis(a.data()?.createdAt) || 0;
+          const bTime = getTimestampMillis(b.data()?.createdAt) || 0;
+          return bTime - aTime;
+        });
+
+        if (isSubscribed) {
+          await processAndSetBookings(combinedDocs);
+        }
+      } catch (error) {
+        console.error("Error fetching user bookings: ", error);
+        if (isSubscribed) {
+          toast({ title: "Error", description: "Could not fetch your bookings.", variant: "destructive" });
+          setIsLoadingBookings(false);
+        }
+      }
+    };
+
+    fetchAllUserBookings();
+
+    const unsubscribe = onSnapshot(q, () => {
+      fetchAllUserBookings();
     }, (error) => {
-      console.error("Error fetching user bookings: ", error);
-      toast({ title: "Error", description: "Could not fetch your bookings.", variant: "destructive" });
-      setIsLoadingBookings(false);
+      console.error("Error in bookings onSnapshot: ", error);
     });
 
-    return () => unsubscribe();
+    return () => {
+      isSubscribed = false;
+      unsubscribe();
+    };
   }, [user, authLoading, toast]);
 
 
@@ -657,6 +716,12 @@ export default function MyBookingsPage() {
                   <div>
                     <p className="text-muted-foreground">Total Amount</p>
                     <p className="font-medium">{formatCurrency(booking.totalAmount, symbol, decimals, code)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Payment Method</p>
+                    <p className="font-medium">
+                      {(booking.paymentMethod === 'Online' || !!booking.razorpayPaymentId || !!booking.stripePaymentIntent || !!booking.stripeSessionId) ? 'Online' : 'Pay After Service'}
+                    </p>
                   </div>
                   <div className="sm:col-span-2 md:col-span-3">
                     <p className="text-muted-foreground">Booked On</p>

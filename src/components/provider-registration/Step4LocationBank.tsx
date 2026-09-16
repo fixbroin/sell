@@ -27,10 +27,10 @@ import { compressImage } from "@/lib/imageCompressor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-const STORAGE_KEY = 'yourbrand_reg_step4';
+const STORAGE_KEY = 'fixbro_reg_step4';
 
-const MapAddressSelector = dynamic(() => import('@/components/checkout/MapAddressSelector'), {
-  loading: () => <div className="flex items-center justify-center h-64 bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin" /></div>,
+const ProviderMapZoneSelector = dynamic(() => import('@/components/provider-registration/ProviderMapZoneSelector'), {
+  loading: () => <div className="flex items-center justify-center h-64 bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>,
   ssr: false
 });
 
@@ -50,6 +50,7 @@ const createStep4Schema = (maxRadius: number) => z.object({
     message: "Please select a location on the map.",
   }),
   workAreaRadiusKm: z.coerce.number().min(1, "Radius must be at least 1 km.").max(maxRadius, `Radius cannot exceed the maximum of ${maxRadius} km.`),
+  workAreaAddress: z.string().optional(),
   bankName: z.string().min(2, "Bank name is required.").max(100),
   accountHolderName: z.string().min(2, "Account holder name is required.").max(100),
   accountNumber: z.string().min(5, "Account number seems too short.").max(25, "Account number too long."),
@@ -92,6 +93,7 @@ export default function Step4LocationBank({
 
   
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
+  const [selectedAddressText, setSelectedAddressText] = useState<string>(initialData.workAreaAddress || "");
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
   const [termsContent, setTermsContent] = useState("");
   const [canAgreeTerms, setCanAgreeTerms] = useState(false);
@@ -121,6 +123,7 @@ export default function Step4LocationBank({
     defaultValues: {
       workAreaCenter: initialData.workAreaCenter ? { lat: initialData.workAreaCenter.latitude, lng: initialData.workAreaCenter.longitude } : undefined,
       workAreaRadiusKm: initialData.workAreaRadiusKm || 5,
+      workAreaAddress: initialData.workAreaAddress || "",
       bankName: initialData.bankDetails?.bankName || "",
       accountHolderName: initialData.bankDetails?.accountHolderName || "",
       accountNumber: initialData.bankDetails?.accountNumber || "",
@@ -165,6 +168,7 @@ export default function Step4LocationBank({
       try {
         const data = JSON.parse(saved);
         form.reset({ ...initialData, ...data });
+        if (data.workAreaAddress) setSelectedAddressText(data.workAreaAddress);
         if (data.cancelledChequeUrl) setCurrentChequePreview(data.cancelledChequeUrl);
         if (data.signatureUrl) setCurrentSignaturePreview(data.signatureUrl);
       } catch (e) {
@@ -178,10 +182,13 @@ export default function Step4LocationBank({
     if (isEditModeByAdmin || !userUid) return;
     const subscription = form.watch((value) => {
       const userStorageKey = `${STORAGE_KEY}_${userUid}`;
-      localStorage.setItem(userStorageKey, JSON.stringify(value));
+      localStorage.setItem(userStorageKey, JSON.stringify({
+        ...value,
+        workAreaAddress: selectedAddressText || value.workAreaAddress,
+      }));
     });
     return () => subscription.unsubscribe();
-  }, [form, userUid, isEditModeByAdmin]);
+  }, [form, userUid, isEditModeByAdmin, selectedAddressText]);
 
   const customFields = appConfig?.customBankFields || [
     { id: 'ifsc', name: 'IFSC Code', type: 'alphanumeric', required: true, placeholder: 'Enter IFSC code' }
@@ -197,6 +204,7 @@ export default function Step4LocationBank({
     form.reset({
       workAreaCenter: initialData.workAreaCenter ? { lat: initialData.workAreaCenter.latitude, lng: initialData.workAreaCenter.longitude } : undefined,
       workAreaRadiusKm: initialData.workAreaRadiusKm || 5,
+      workAreaAddress: initialData.workAreaAddress || "",
       bankName: initialData.bankDetails?.bankName || "",
       accountHolderName: initialData.bankDetails?.accountHolderName || "",
       accountNumber: initialData.bankDetails?.accountNumber || "",
@@ -207,6 +215,9 @@ export default function Step4LocationBank({
       termsConfirmation: initialData.termsConfirmedAt ? true : false,
       customFields: defaultCustomFields,
     });
+    if (initialData.workAreaAddress) {
+      setSelectedAddressText(initialData.workAreaAddress);
+    }
     setCurrentChequePreview(initialData.bankDetails?.cancelledChequeUrl || null);
     setSelectedChequeFile(null);
     if (chequeFileInputRef.current) chequeFileInputRef.current.value = "";
@@ -216,11 +227,18 @@ export default function Step4LocationBank({
     if (signatureFileInputRef.current) signatureFileInputRef.current.value = "";
   }, [initialData, form, customFields]);
 
-  const handleMapAddressSelect = (addressData: any) => {
-    if (addressData.latitude && addressData.longitude) {
-      form.setValue("workAreaCenter", { lat: addressData.latitude, lng: addressData.longitude });
-      setIsMapModalOpen(false);
-      setIsTermsModalOpen(true); 
+  const handleLocationConfirm = (locationData: {
+    center: { lat: number; lng: number };
+    radiusKm: number;
+    address: string;
+  }) => {
+    form.setValue("workAreaCenter", locationData.center, { shouldValidate: true });
+    form.setValue("workAreaRadiusKm", locationData.radiusKm, { shouldValidate: true });
+    form.setValue("workAreaAddress", locationData.address);
+    setSelectedAddressText(locationData.address);
+    setIsMapModalOpen(false);
+    if (!form.getValues("termsConfirmation")) {
+      setIsTermsModalOpen(true);
     }
   };
 
@@ -425,6 +443,7 @@ export default function Step4LocationBank({
           longitude: data.workAreaCenter!.lng,
         },
         workAreaRadiusKm: data.workAreaRadiusKm,
+        workAreaAddress: selectedAddressText || data.workAreaAddress || undefined,
         bankDetails: bankDetailsData,
         termsConfirmedAt: data.termsConfirmation ? Timestamp.now() : undefined,
         signatureUrl: enableSignature ? (finalSignatureUrl || initialData.signatureUrl) : undefined,
@@ -451,13 +470,69 @@ export default function Step4LocationBank({
       <form onSubmit={form.handleSubmit(handleSubmit)}>
         <CardContent className="space-y-6">
           <Card className="p-4 border bg-muted/10 shadow-sm">
-            <CardHeader className="p-0 pb-3"><CardTitle className="text-lg flex items-center"><MapPin className="mr-2 h-5 w-5 text-primary"/>Work Area</CardTitle></CardHeader>
+            <CardHeader className="p-0 pb-3 flex flex-row items-center justify-between">
+              <CardTitle className="text-lg flex items-center">
+                <MapPin className="mr-2 h-5 w-5 text-primary" />
+                Work Location & Service Area
+              </CardTitle>
+              {form.watch("workAreaCenter") && (
+                <Badge variant="secondary" className="text-xs bg-green-500/10 text-green-600 border-green-500/20 font-medium">
+                  <Check className="h-3 w-3 mr-1" /> Location Set
+                </Badge>
+              )}
+            </CardHeader>
             <CardContent className="p-0 space-y-3">
-              <Button type="button" variant="outline" className="w-full h-11 justify-between px-4" onClick={() => setIsMapModalOpen(true)}>
-                <span className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary"/> Update Service Location</span>
-                <ChevronRight className="h-4 w-4 opacity-50" />
-              </Button>
-              <FormField control={form.control} name="workAreaRadiusKm" render={({ field }) => (<FormItem><FormLabel>Service Radius (in kilometers)</FormLabel><FormControl><Input type="number" step="1" placeholder="e.g., 10" {...field} disabled={effectiveIsSaving} /></FormControl><FormDescription className="text-[10px]">Max allowed: {maxRadius} km.</FormDescription><FormMessage /></FormItem>)}/>
+              {form.watch("workAreaCenter") ? (
+                <div className="rounded-lg border bg-background p-3.5 space-y-2.5">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Selected Work Center</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {selectedAddressText || form.watch("workAreaAddress") || "Center point selected on map"}
+                    </p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      Coordinates: {form.watch("workAreaCenter")?.lat?.toFixed(5)}, {form.watch("workAreaCenter")?.lng?.toFixed(5)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1.5 border-t text-xs">
+                    <span className="text-muted-foreground">Coverage Radius:</span>
+                    <Badge variant="outline" className="font-semibold text-primary border-primary/30">
+                      {form.watch("workAreaRadiusKm") || 5} km radius
+                    </Badge>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-10 justify-center gap-2 mt-1"
+                    onClick={() => setIsMapModalOpen(true)}
+                    disabled={effectiveIsSaving}
+                  >
+                    <MapPin className="h-4 w-4 text-primary" />
+                    Change Service Location & Radius
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-md text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>Please pinpoint your work center location and set your service radius on the map.</span>
+                  </div>
+                  <Button
+                    type="button"
+                    className="w-full h-11 justify-center gap-2"
+                    onClick={() => setIsMapModalOpen(true)}
+                    disabled={effectiveIsSaving}
+                  >
+                    <MapPin className="h-4 w-4" />
+                    Set Service Location & Radius on Map
+                  </Button>
+                </div>
+              )}
+
+              {form.formState.errors.workAreaCenter && (
+                <p className="text-xs font-medium text-destructive mt-1">
+                  {form.formState.errors.workAreaCenter.message || "Please select a location on the map."}
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -707,14 +782,15 @@ export default function Step4LocationBank({
           </DialogHeader>
           <div className="flex-grow relative">
             {!isLoadingAppSettings && appConfig.googleMapsApiKey ? (
-              <MapAddressSelector 
+              <ProviderMapZoneSelector 
                 apiKey={appConfig.googleMapsApiKey} 
-                onAddressSelect={handleMapAddressSelect} 
+                initialCenter={form.getValues('workAreaCenter') || null}
+                initialRadiusKm={form.getValues('workAreaRadiusKm') || 5}
+                maxRadiusKm={maxRadius}
+                onConfirm={handleLocationConfirm} 
                 onClose={() => setIsMapModalOpen(false)} 
-                initialCenter={form.getValues('workAreaCenter') || null} 
-                serviceZones={[]} 
               />
-            ) : <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin"/></div>}
+            ) : <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-primary"/></div>}
           </div>
         </DialogContent>
       </Dialog>
