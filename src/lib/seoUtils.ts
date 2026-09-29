@@ -114,7 +114,7 @@ export const defaultSeoValues: FirestoreSEOSettings = {
 
   structuredDataCountry: 'IN',
 
-  structuredDataTelephone: '+91-7353113455',
+  structuredDataTelephone: '+91-9876543210',
 
   structuredDataImage:
     'https://yourdomain/android-chrome-512x512.png',

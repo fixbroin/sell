@@ -80,7 +80,7 @@ export default async function AboutUsPage() {
     "description": pageData.metaDescription || "Yourbrand is Bangalore's leading home services provider, offering professional carpentry, electrical, plumbing, and more.",
     "contactPoint": {
       "@type": "ContactPoint",
-      "telephone": "+91-7353113455",
+      "telephone": "+91-9876543210",
       "contactType": "customer service",
       "areaServed": "IN",
       "availableLanguage": ["en", "kn", "hi"]

@@ -3,7 +3,7 @@ import type { GlobalWebSettings } from '@/types/firestore';
 import { DEFAULT_LIGHT_THEME_COLORS_HSL, DEFAULT_DARK_THEME_COLORS_HSL } from '@/lib/colorUtils';
 
 export const defaultGlobalWebSettings: GlobalWebSettings = {
-  websiteName: "Yourbrand",
+  websiteName: process.env.NEXT_PUBLIC_APP_NAME || "Yourbrand",
   contactEmail: "support@yourdomain.com",
   contactMobile: "+917353113455",
   address: "123 Main Street, City, Country - 123456",

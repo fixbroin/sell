@@ -9,15 +9,24 @@ export async function compressImage(file: File, maxMb: number = 1.5): Promise<Fi
     return file;
   }
 
-  // Only compress common image formats
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+  // Detect image via MIME type or file extension (supports Android camera 'image/jpg', blank MIME, etc.)
+  const isImageMime = file.type && (file.type.startsWith("image/") || ["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(file.type.toLowerCase()));
+  const isImageExt = /\.(jpe?g|png|webp|heic|heif|bmp)$/i.test(file.name);
+  if (!isImageMime && !isImageExt) {
     return file;
   }
 
-  // Skip compression if the file is already under 1.5MB
+  // If the file is already under maxMb (e.g. smaller/cropped images):
+  // We still load it into an in-memory File to detach from Android OS temporary file handles
   const sizeInMb = file.size / (1024 * 1024);
   if (sizeInMb <= maxMb) {
-    return file;
+    try {
+      const buffer = await file.arrayBuffer();
+      const inMemBlob = new Blob([buffer], { type: file.type || 'image/jpeg' });
+      return new File([inMemBlob], file.name, { type: inMemBlob.type, lastModified: Date.now() });
+    } catch {
+      return file;
+    }
   }
 
   return new Promise((resolve) => {

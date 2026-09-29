@@ -144,7 +144,7 @@ nano .env
 Paste the following configurations (replacing placeholders with actual keys):
 ```env
 NODE_ENV=production
-PORT=3006
+PORT=3000
 NEXT_PUBLIC_BASE_URL=https://yourdomain.com
 
 # Database Configurations
@@ -213,7 +213,7 @@ sudo nano /etc/nginx/sites-available/your-app-name
 ```
 
 ### 2. Paste Initial HTTP Reverse Proxy
-Paste this simple HTTP configuration to map your domain traffic to Node port 3006:
+Paste this simple HTTP configuration to map your domain traffic to Node port 3000:
 ```nginx
 server {
     listen 80;
@@ -221,7 +221,7 @@ server {
     client_max_body_size 500M;
 
     location / {
-        proxy_pass http://127.0.0.1:3006;
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -301,7 +301,7 @@ server {
         access_log off;
         add_header Cache-Control "public, max-age=2592000, immutable";
 
-        proxy_pass http://127.0.0.1:3006;
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -315,13 +315,13 @@ server {
         access_log off;
         add_header Cache-Control "public, immutable";
 
-        proxy_pass http://127.0.0.1:3006;
+        proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
     }
 
     # Main Next.js App Reverse Proxy with WebSocket support
     location / {
-        proxy_pass http://127.0.0.1:3006;
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";

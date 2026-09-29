@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
             console.log(`Stripe Webhook confirmed Booking ID: ${bookingId}. Triggering post-process.`);
 
             // Trigger server-side post-process internally
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3006';
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
             fetch(`${appUrl}/api/bookings/post-process`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
 
             console.log(`Stripe Webhook completed cancellation fee for Booking ID: ${bookingId}. Triggering post-process.`);
 
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3006';
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
             fetch(`${appUrl}/api/bookings/post-process`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

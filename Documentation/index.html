@@ -737,7 +737,7 @@
         </div>
         <div class="meta-card">
           <strong>Default Port</strong>
-          <span class="val">3006 (Configurable)</span>
+          <span class="val">3000 (Configurable)</span>
         </div>
       </div>
     </header>
@@ -774,9 +774,9 @@
           <div class="alert alert-tip">
             <div class="alert-title">🎉 Application Ready!</div>
             <ul>
-              <li><strong>Customer Web App:</strong> <a href="http://localhost:3006" target="_blank">http://localhost:3006</a></li>
-              <li><strong>Provider Panel:</strong> <a href="http://localhost:3006/provider" target="_blank">http://localhost:3006/provider</a></li>
-              <li><strong>Super Admin Dashboard:</strong> <a href="http://localhost:3006/admin" target="_blank">http://localhost:3006/admin</a></li>
+              <li><strong>Customer Web App:</strong> <a href="http://localhost:3000" target="_blank">http://localhost:3000</a></li>
+              <li><strong>Provider Panel:</strong> <a href="http://localhost:3000/provider" target="_blank">http://localhost:3000/provider</a></li>
+              <li><strong>Super Admin Dashboard:</strong> <a href="http://localhost:3000/admin" target="_blank">http://localhost:3000/admin</a></li>
             </ul>
           </div>
         </div>
@@ -1122,7 +1122,7 @@
         <li>Copy <code>.env.example</code> to <code>.env</code> and update connection values.</li>
         <li>Execute <code>npm install</code> to install package dependencies.</li>
         <li>Execute <code>npm run db:init</code> to provision MySQL tables.</li>
-        <li>Execute <code>npm run dev</code> to boot the development server at <code>http://localhost:3006</code>.</li>
+        <li>Execute <code>npm run dev</code> to boot the development server at <code>http://localhost:3000</code>.</li>
       </ol>
     </section>
 
@@ -1293,7 +1293,7 @@ pm2 startup</code></pre>
     server_name yourdomain.com www.yourdomain.com;
 
     location / {
-        proxy_pass http://127.0.0.1:3006;
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -1475,8 +1475,8 @@ npm run build</code></pre>
           <p><strong>Fix:</strong></p>
           <ol>
             <li>Check PM2 status: <code>pm2 status</code> and logs: <code>pm2 logs wecanfix</code>.</li>
-            <li>Verify application port in <code>package.json</code> (default <code>3006</code>).</li>
-            <li>Ensure <code>proxy_pass http://127.0.0.1:3006;</code> in Nginx configuration matches the port.</li>
+            <li>Verify application port in <code>package.json</code> (default <code>3000</code>).</li>
+            <li>Ensure <code>proxy_pass http://127.0.0.1:3000;</code> in Nginx configuration matches the port.</li>
           </ol>
         </div>
       </div>

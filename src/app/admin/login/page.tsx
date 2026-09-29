@@ -16,7 +16,6 @@ import { useAuth } from '@/hooks/useAuth';
 import type { LogInData } from '@/contexts/AuthContext';
 import { ADMIN_EMAIL } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { db, collection, query, where, getDocs, limit } from '@/lib/mysqlDb';
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address." }),
@@ -27,7 +26,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { user, adminPermissions, isAdminLoading, logIn, isLoading } = useAuth();
+  const { user, adminPermissions, isSuperAdmin, isAdminLoading, logIn, logOut, isLoading } = useAuth();
   const { toast } = useToast();
 
   const form = useForm<LoginFormValues>({
@@ -40,32 +39,37 @@ export default function AdminLoginPage() {
 
   useEffect(() => {
     if (user && !isAdminLoading) {
-      if (adminPermissions) {
+      if (adminPermissions || isSuperAdmin || user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
         router.push('/admin'); 
       } else {
         toast({ title: "Access Denied", description: "You are not authorized to access the admin panel.", variant: "destructive"});
-        router.push('/');
+        logOut();
       }
     }
-  }, [user, adminPermissions, isAdminLoading, router, toast]);
+  }, [user, adminPermissions, isSuperAdmin, isAdminLoading, router, toast, logOut]);
 
   const onSubmit = async (data: LoginFormValues) => {
     form.clearErrors('email');
     form.clearErrors('password');
     
-    const emailLower = data.email.toLowerCase();
+    const emailLower = data.email.toLowerCase().trim();
     let isAdmin = emailLower === ADMIN_EMAIL.toLowerCase();
 
     if (!isAdmin) {
       try {
-        const adminsRef = collection(db, 'admins');
-        const q = query(adminsRef, where('email', '==', emailLower), where('status', '==', 'active'), limit(1));
-        const querySnap = await getDocs(q);
-        if (!querySnap.empty) {
-          isAdmin = true;
+        const response = await fetch('/api/admin/verify-admin-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailLower }),
+        });
+        if (response.ok) {
+          const resData = await response.json();
+          if (resData.isAdmin) {
+            isAdmin = true;
+          }
         }
       } catch (dbError) {
-        console.error("Failed to verify admin status from database:", dbError);
+        console.error("Failed to verify admin status via server API:", dbError);
       }
     }
 

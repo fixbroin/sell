@@ -306,23 +306,19 @@ export default function PaymentSummary({ paymentMethod, canBook, appliedPromo, o
     let platformFeeTax = 0;
     const newPlatformFees: AppliedPlatformFeeItem[] = [];
 
-    // Apply platform fees based on exclusive fee policy
-    const isExclusiveFeePolicy = appConfig?.enableExclusiveFeePolicy !== false;
-    const shouldApplyPlatformFees = !isExclusiveFeePolicy || baseVC === 0;
-
-    if (shouldApplyPlatformFees) {
-      (appConfig?.platformFees || []).forEach(fee => {
+    // Only apply platform fees if visiting charge is NOT applied (i.e. baseVC is 0)
+    if (baseVC === 0) {
+      (appConfig.platformFees || []).forEach(fee => {
         if (fee.isActive) {
           const feeAmount = fee.type === 'percentage' ? (currentSumOfDisplayed * fee.value) / 100 : fee.value;
-          const feeTax = feeAmount * ((fee.feeTaxRatePercent || 0) / 100);
+          const feeTax = feeAmount * (fee.feeTaxRatePercent / 100);
           newPlatformFees.push({
             name: fee.name,
             type: fee.type,
             valueApplied: fee.value,
             calculatedFeeAmount: feeAmount,
-            taxRatePercentOnFee: fee.feeTaxRatePercent || 0,
-            taxAmountOnFee: feeTax,
-            amount: feeAmount + feeTax,
+            taxRatePercentOnFee: fee.feeTaxRatePercent,
+            taxAmountOnFee: feeTax
           });
           platformFeeBase += feeAmount;
           platformFeeTax += feeTax;

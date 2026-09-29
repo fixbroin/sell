@@ -42,7 +42,7 @@ export const generateQuotationPdf = async (quotation: FirestoreQuotation, compan
     name: companyDetails?.name || process.env.NEXT_PUBLIC_WEBSITE_NAME || "Yourbrand",
     address: companyDetails?.address || "123 Main Street, City, Country - 123456",
     contactEmail: companyDetails?.contactEmail || 'support@yourdomain.com',
-    contactMobile: companyDetails?.contactMobile || '+91-7353113455',
+    contactMobile: companyDetails?.contactMobile || '+91-9876543210',
     logoUrl: companyDetails?.logoUrl,
     currencySymbol: companyDetails?.currencySymbol || '₹',
   };

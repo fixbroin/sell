@@ -28,7 +28,7 @@ import { logUserActivity } from '@/lib/activityLogger';
 import { useAuth as useAuthHook } from '@/hooks/useAuth';
 import { getGuestId } from '@/lib/guestIdManager';
 import { useGlobalSettings } from '@/hooks/useGlobalSettings';
-import { isWebView, requestNativePayment } from '@/lib/webview-bridge';
+import { isWebView } from '@/lib/webview-bridge';
 import { getTimestampMillis } from '@/lib/utils';
 
 
@@ -349,15 +349,13 @@ export default function PaymentPage() {
     setVisitingCharge(calculatedBaseVisitingCharge); setPolicyMessage(currentPolicyMessage);
 
     let runningTotalForPlatformFeeBase = 0; let runningTotalTaxOnPlatformFees = 0; const newCalculatedPlatformFees: AppliedPlatformFeeItem[] = [];
-    const isExclusiveFeePolicy = appConfig?.enableExclusiveFeePolicy !== false;
-    const shouldApplyPlatformFees = (!isExclusiveFeePolicy || calculatedBaseVisitingCharge === 0) && appConfig.platformFees && appConfig.platformFees.length > 0;
-    if (shouldApplyPlatformFees && appConfig.platformFees) {
+    if (calculatedBaseVisitingCharge === 0 && appConfig.platformFees && appConfig.platformFees.length > 0) {
       appConfig.platformFees.forEach(fee => {
         if (fee.isActive) {
           let feeBaseAmount = 0;
           if (fee.type === 'percentage') feeBaseAmount = (currentSumOfDisplayedPrices * fee.value) / 100; else feeBaseAmount = fee.value;
-          const taxOnThisFee = feeBaseAmount * ((fee.feeTaxRatePercent || 0) / 100);
-          newCalculatedPlatformFees.push({ name: fee.name, type: fee.type, valueApplied: fee.value, calculatedFeeAmount: feeBaseAmount, taxRatePercentOnFee: fee.feeTaxRatePercent || 0, taxAmountOnFee: taxOnThisFee, amount: feeBaseAmount + taxOnThisFee });
+          const taxOnThisFee = feeBaseAmount * (fee.feeTaxRatePercent / 100);
+          newCalculatedPlatformFees.push({ name: fee.name, type: fee.type, valueApplied: fee.value, calculatedFeeAmount: feeBaseAmount, taxRatePercentOnFee: fee.feeTaxRatePercent, taxAmountOnFee: taxOnThisFee });
           runningTotalForPlatformFeeBase += feeBaseAmount; runningTotalTaxOnPlatformFees += taxOnThisFee;
         }
       });
@@ -582,18 +580,6 @@ export default function PaymentPage() {
   const handleRazorpayCheckout = async () => {
     setIsProcessingPayment(true);
     showLoading();
-
-    if (isWebView()) {
-        const paymentDetails = {
-            amount: Math.round(totalAmountDue * 100),
-            currency: appConfig?.currencyCode || 'INR',
-            description: isCancellationFeeMode && cancellationFeeDetails?.humanReadableBookingId ? `Cancellation Fee for Booking ${cancellationFeeDetails.humanReadableBookingId}` : "Service Booking Payment"
-        };
-        requestNativePayment(paymentDetails);
-        setIsProcessingPayment(false);
-        hideLoading();
-        return;
-    }
 
     const scriptLoaded = await loadRazorpayScript();
     if (!scriptLoaded) { 

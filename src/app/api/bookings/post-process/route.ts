@@ -583,7 +583,7 @@ export async function POST(request: Request) {
                 name: seoSettings?.websiteName || "Yourbrand",
                 address: appConfig?.companyAddress || "123 Main Street, City, Country - 123456",
                 contactEmail: appConfig?.companyEmail || 'support@yourdomain.com',
-                contactMobile: appConfig?.companyPhone || '+91-7353113455',
+                contactMobile: appConfig?.companyPhone || '+91-9876543210',
                 timezone: appConfig?.timezone || 'Asia/Kolkata',
                 currencySymbol: appConfig?.currencySymbol || "₹",
                 dateFormat: appConfig?.dateFormat || "DD/MM/YYYY",

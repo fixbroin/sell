@@ -643,7 +643,6 @@ export interface AppSettings {
   limitLateBookingHours: number;
   // Platform Fees
   platformFees?: PlatformFeeSetting[];
-  enableExclusiveFeePolicy?: boolean; // When true (default), platform fee only applies when visiting charge is 0. When false, both apply together.
   // Cancellation Policy
   enableCancellationPolicy: boolean;
   freeCancellationDays?: number;

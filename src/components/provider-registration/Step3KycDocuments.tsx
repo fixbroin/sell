@@ -71,6 +71,7 @@ export default function Step3KycDocuments({
 }: Step3KycDocumentsProps) {
   const { toast } = useToast();
   const [isFormBusy, setIsFormBusy] = useState(false);
+  const [uploadStatusMessage, setUploadStatusMessage] = useState<string>("");
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   const schema = useMemo(() => {
@@ -290,31 +291,81 @@ export default function Step3KycDocuments({
     setIsFormBusy(true);
     setValidationErrors([]);
 
+    setUploadStatusMessage("");
+
     try {
-      const [frontAadhaar, backAadhaar, frontPan] = await Promise.all([
-        (enableDefaultIndianKyc || aadhaarFront.file)
-          ? uploadFile(aadhaarFront, `provider_documents/${userUid}/aadhaar_front`, p => setAadhaarFront(prev => ({...prev, uploadProgress: p})))
-          : Promise.resolve({ url: aadhaarFront.existingUrl || null, fileName: aadhaarFront.originalFileName || null }),
-        (enableDefaultIndianKyc || aadhaarBack.file)
-          ? uploadFile(aadhaarBack, `provider_documents/${userUid}/aadhaar_back`, p => setAadhaarBack(prev => ({...prev, uploadProgress: p})))
-          : Promise.resolve({ url: aadhaarBack.existingUrl || null, fileName: aadhaarBack.originalFileName || null }),
-        (enableDefaultIndianKyc || panFront.file)
-          ? uploadFile(panFront, `provider_documents/${userUid}/pan_front`, p => setPanFront(prev => ({...prev, uploadProgress: p})))
-          : Promise.resolve({ url: panFront.existingUrl || null, fileName: panFront.originalFileName || null })
-      ]);
+      let frontAadhaar: { url: string | null; fileName: string | null } = {
+        url: aadhaarFront.existingUrl || null,
+        fileName: aadhaarFront.originalFileName || null
+      };
+      if (aadhaarFront.file) {
+        setUploadStatusMessage("Uploading Aadhaar Front (1/3)...");
+        frontAadhaar = await uploadFile(
+          aadhaarFront,
+          `provider_documents/${userUid}/aadhaar_front`,
+          p => setAadhaarFront(prev => ({ ...prev, uploadProgress: p }))
+        );
+      }
+
+      let backAadhaar: { url: string | null; fileName: string | null } = {
+        url: aadhaarBack.existingUrl || null,
+        fileName: aadhaarBack.originalFileName || null
+      };
+      if (aadhaarBack.file) {
+        setUploadStatusMessage("Uploading Aadhaar Back (2/3)...");
+        backAadhaar = await uploadFile(
+          aadhaarBack,
+          `provider_documents/${userUid}/aadhaar_back`,
+          p => setAadhaarBack(prev => ({ ...prev, uploadProgress: p }))
+        );
+      }
+
+      let frontPan: { url: string | null; fileName: string | null } = {
+        url: panFront.existingUrl || null,
+        fileName: panFront.originalFileName || null
+      };
+      if (panFront.file) {
+        setUploadStatusMessage("Uploading PAN Card (3/3)...");
+        frontPan = await uploadFile(
+          panFront,
+          `provider_documents/${userUid}/pan_front`,
+          p => setPanFront(prev => ({ ...prev, uploadProgress: p }))
+        );
+      }
 
       const additionalDocuments: KycDocument[] = [];
       for (const type of activeAdditionalDocTypes) {
         const docData = additionalDocsData[type.id];
         if (docData) {
-          const [front, back] = await Promise.all([
-            uploadFile(docData.front, `provider_documents/${userUid}/${type.id}_front`, p => setAdditionalDocumentsData(prev => ({
-              ...prev, [type.id]: { ...prev[type.id], front: { ...prev[type.id].front, uploadProgress: p } }
-            }))),
-            docData.back ? uploadFile(docData.back, `provider_documents/${userUid}/${type.id}_back`, p => setAdditionalDocumentsData(prev => ({
-              ...prev, [type.id]: { ...prev[type.id], back: { ...prev[type.id].back!, uploadProgress: p } }
-            }))) : Promise.resolve({url: null, fileName: null})
-          ]);
+          let front: { url: string | null; fileName: string | null } = {
+            url: docData.front.existingUrl || null,
+            fileName: docData.front.originalFileName || null
+          };
+          if (docData.front.file) {
+            setUploadStatusMessage(`Uploading ${type.label} Front...`);
+            front = await uploadFile(
+              docData.front,
+              `provider_documents/${userUid}/${type.id}_front`,
+              p => setAdditionalDocumentsData(prev => ({
+                ...prev, [type.id]: { ...prev[type.id], front: { ...prev[type.id].front, uploadProgress: p } }
+              }))
+            );
+          }
+
+          let back: { url: string | null; fileName: string | null } = {
+            url: docData.back?.existingUrl || null,
+            fileName: docData.back?.originalFileName || null
+          };
+          if (docData.back?.file) {
+            setUploadStatusMessage(`Uploading ${type.label} Back...`);
+            back = await uploadFile(
+              docData.back,
+              `provider_documents/${userUid}/${type.id}_back`,
+              p => setAdditionalDocumentsData(prev => ({
+                ...prev, [type.id]: { ...prev[type.id], back: { ...prev[type.id].back!, uploadProgress: p } }
+              }))
+            );
+          }
 
           if (front.url || back.url || docData.docNumber) {
             additionalDocuments.push({
@@ -331,16 +382,37 @@ export default function Step3KycDocuments({
         }
       }
 
+      setUploadStatusMessage("Finishing up...");
       onNext({
-        aadhaar: (enableDefaultIndianKyc || frontAadhaar.url) ? { docType: 'aadhaar', docNumber: data.aadhaarNumber || "", frontImageUrl: frontAadhaar.url || "", backImageUrl: backAadhaar.url || "", verified: initialData.aadhaar?.verified || false, frontImageFileName: frontAadhaar.fileName || undefined, backImageFileName: backAadhaar.fileName || undefined } : undefined,
-        pan: (enableDefaultIndianKyc || frontPan.url) ? { docType: 'pan', docNumber: data.panNumber || "", frontImageUrl: frontPan.url || "", verified: initialData.pan?.verified || false, frontImageFileName: frontPan.fileName || undefined } : undefined,
+        aadhaar: (enableDefaultIndianKyc || frontAadhaar.url) ? {
+          docType: 'aadhaar',
+          docNumber: data.aadhaarNumber || "",
+          frontImageUrl: frontAadhaar.url || "",
+          backImageUrl: backAadhaar.url || "",
+          verified: initialData.aadhaar?.verified || false,
+          frontImageFileName: frontAadhaar.fileName || undefined,
+          backImageFileName: backAadhaar.fileName || undefined
+        } : undefined,
+        pan: (enableDefaultIndianKyc || frontPan.url) ? {
+          docType: 'pan',
+          docNumber: data.panNumber || "",
+          frontImageUrl: frontPan.url || "",
+          verified: initialData.pan?.verified || false,
+          frontImageFileName: frontPan.fileName || undefined
+        } : undefined,
         additionalDocuments
       });
 
-    } catch (error) {
-      toast({ title: "Upload Failed", description: "An error occurred while uploading documents. Please try again.", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Step 3 KYC upload error:", error);
+      toast({
+        title: "Upload Failed",
+        description: error?.message || "An error occurred while uploading documents. Please try again.",
+        variant: "destructive"
+      });
     } finally {
       setIsFormBusy(false);
+      setUploadStatusMessage("");
     }
   };
 
@@ -352,6 +424,7 @@ export default function Step3KycDocuments({
     isRequired = false
   ) => {
     const hasError = validationErrors.some(e => e.includes(label));
+    const inputId = `input-${label.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
     return (
       <div className="space-y-2">
         <div className="flex justify-between items-center">
@@ -362,7 +435,7 @@ export default function Step3KycDocuments({
         </div>
         
         <div 
-          onClick={() => !isFormBusy && !isSaving && document.getElementById(`input-${label}`)?.click()}
+          onClick={() => !isFormBusy && !isSaving && document.getElementById(inputId)?.click()}
           className={cn(
             "relative aspect-[3/2] rounded-lg border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden",
             hasError ? "border-destructive bg-destructive/5" : "border-muted-foreground/25 hover:border-primary/50 bg-muted/30"
@@ -392,13 +465,18 @@ export default function Step3KycDocuments({
         </div>
 
         <input 
-          id={`input-${label}`}
+          id={inputId}
           type="file" 
           accept="image/*" 
           className="hidden" 
           onChange={async (e) => {
             if (e.target.files?.[0]) {
               const file = e.target.files[0];
+              if (file.size > 50 * 1024 * 1024) {
+                toast({ title: "File Too Large", description: "Image must be < 50MB.", variant: "destructive" });
+                e.target.value = "";
+                return;
+              }
               let fileToSet = file;
               try {
                 fileToSet = await compressImage(file);
@@ -406,6 +484,7 @@ export default function Step3KycDocuments({
                 console.error("Compression failed", err);
               }
               onFileSelect(fileToSet);
+              e.target.value = "";
             }
           }}
           disabled={isFormBusy || isSaving}
@@ -417,7 +496,7 @@ export default function Step3KycDocuments({
             variant={hasError ? "destructive" : "outline"} 
             size="sm" 
             className="h-8 text-[10px]"
-            onClick={() => document.getElementById(`input-${label}`)?.click()}
+            onClick={() => document.getElementById(inputId)?.click()}
             disabled={isFormBusy || isSaving}
           >
             Choose File
@@ -549,7 +628,7 @@ export default function Step3KycDocuments({
           <Button type="button" variant="outline" onClick={onPrevious} disabled={isFormBusy || isSaving}>Previous</Button>
           <Button type="submit" disabled={isFormBusy || isSaving}>
             {isFormBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-            {isFormBusy ? "Uploading..." : "Save & Continue"}
+            {isFormBusy ? (uploadStatusMessage || "Uploading documents...") : "Save & Continue"}
           </Button>
         </CardFooter>
       </form>

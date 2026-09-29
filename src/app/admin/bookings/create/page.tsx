@@ -271,14 +271,12 @@ export default function AdminCreateBookingPage() {
         }
       }
     }
-    const isExclusiveFeePolicy = appConfig?.enableExclusiveFeePolicy !== false;
-    const shouldApplyPlatformFees = (!isExclusiveFeePolicy || visitingCharge === 0) && appConfig?.platformFees;
-    if (shouldApplyPlatformFees && appConfig?.platformFees) {
+    if (visitingCharge === 0 && appConfig?.platformFees) {
       appConfig.platformFees.forEach(fee => {
         if (fee.isActive) {
           const base = fee.type === 'percentage' ? (itemTotal * (fee.value / 100)) : fee.value;
           const tax = base * ((fee.feeTaxRatePercent || 0) / 100);
-          appliedPlatformFees.push({ name: fee.name, type: fee.type, valueApplied: fee.value, calculatedFeeAmount: base, taxRatePercentOnFee: fee.feeTaxRatePercent || 0, taxAmountOnFee: tax, amount: base + tax });
+          appliedPlatformFees.push({ name: fee.name, type: fee.type, valueApplied: fee.value, calculatedFeeAmount: base, taxRatePercentOnFee: fee.feeTaxRatePercent || 0, taxAmountOnFee: tax });
           platformFeeTotal += (base + tax);
         }
       });

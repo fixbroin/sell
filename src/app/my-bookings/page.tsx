@@ -548,7 +548,7 @@ export default function MyBookingsPage() {
         name: globalCompanySettings?.websiteName || "Yourbrand.in",
         address: globalCompanySettings?.address || "123 Main Street, City, Country - 123456",
         contactEmail: globalCompanySettings?.contactEmail || "support@yourdomain.com",
-        contactMobile: globalCompanySettings?.contactMobile || "+91-7353113455",
+        contactMobile: globalCompanySettings?.contactMobile || "+91-9876543210",
         logoUrl: globalCompanySettings?.logoUrl || undefined,
         timezone: appConfig?.timezone || "Asia/Kolkata",
         currencySymbol: appConfig?.currencySymbol || "₹",

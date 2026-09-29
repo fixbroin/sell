@@ -176,12 +176,8 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
   const isAuthenticated: boolean = Boolean(user.uid && user.uid !== 'guest');
   const isOwner: boolean = Boolean(isAuthenticated && docId === user.uid);
 
-  // 2. Financial & System-Critical Tables (NEVER directly writable by client mutations)
-  // These tables can ONLY be written by authenticated server routes / admin tasks:
+  // 2. Public Static Content (Readable by all, strictly server-only write for non-admins)
   const SERVER_ONLY_WRITE_TABLES = [
-    'providerWalletTransactions',
-    'invoices',
-    'admins',
     'webSettings',
     'appConfiguration',
     'adminCategories',
@@ -192,6 +188,7 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
     'adminFAQs',
     'taxes',
     'adminPopups',
+    'blogPosts',
     'cities',
     'areas',
     'pinCodeAreaMappings',
@@ -220,6 +217,12 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
     return isOwner; // Fields sanitized in mutate endpoint
   }
 
+  // 3b. Admins table (Users can only read their own admin doc; client write is strictly blocked)
+  if (table === 'admins') {
+    if (action === 'write') return false;
+    return isOwner;
+  }
+
   // 4. Provider Applications (Public read for directory/assignment; authenticated applicants can create/update their own)
   if (table === 'providerApplications') {
     if (action === 'read') return true; // Sanitized at endpoint level for non-admins
@@ -235,12 +238,18 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
   if ([
     'contactUsSubmissions',
     'popupSubmissions',
+    'userActivities',
     'outOfZoneRequests',
     'visitorInfoLogs',
-    'searchAnalytics',
-    'customServiceRequests'
+    'searchAnalytics'
   ].includes(table)) {
     return action === 'write';
+  }
+
+  // 6b. Custom Service Requests (Visitors/Customers can submit; authenticated users can read their own)
+  if (table === 'customServiceRequests') {
+    if (action === 'write') return true;
+    return isAuthenticated;
   }
 
   // 7. Chats & Chat Messages (Only authenticated users)
@@ -260,8 +269,11 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
     return isAuthenticated;
   }
 
-  // 10. Withdrawals, Quotations, Referrals, Leaves, Provider Complaints
+  // 10. Provider Operations: Invoices, Wallet Transactions, Withdrawals, Quotations, Referrals, Leaves, Provider Complaints
+  // Authenticated users can access their own; non-admin queries are automatically scoped by providerId in getDocs
   if ([
+    'invoices',
+    'providerWalletTransactions',
     'withdrawalRequests',
     'quotations',
     'referrals',
@@ -271,7 +283,7 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
     return isAuthenticated;
   }
 
-  // 11. Customer Reviews (Public read, public write submission)
+  // 12. Customer Reviews (Public read, public write submission)
   if (table === 'adminReviews') {
     if (action === 'read') return true;
     return action === 'write';

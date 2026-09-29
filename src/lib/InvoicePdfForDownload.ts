@@ -52,7 +52,7 @@ export const generateInvoicePdf = async (booking: FirestoreBooking, companyDetai
     name: companyDetails?.name || "Yourbrand.in",
     address: companyDetails?.address || "123 Main Street, City, Country - 123456",
     contactEmail: companyDetails?.contactEmail || 'support@yourdomain.com',
-    contactMobile: companyDetails?.contactMobile || '+91-7353113455',
+    contactMobile: companyDetails?.contactMobile || '+91-9876543210',
     logoUrl: companyDetails?.logoUrl,
     timezone: timezone
   };
@@ -260,6 +260,17 @@ if (booking.additionalCharges && booking.additionalCharges.length > 0) {
   doc.text("Thank you for choosing " + defaultCompanyDetails.name + "!", 105, pageHeight - 15, { align: "center" });
   doc.text("This is a computer generated invoice and does not require a signature.", 105, pageHeight - 10, { align: "center" });
 
-  doc.save(`invoice-${booking.bookingId}.pdf`); 
+  const fileName = `invoice-${booking.bookingId}.pdf`;
+  if (typeof window !== 'undefined' && (window as any).isFlutterNativeApp && (window as any).FlutterBridge) {
+    const dataUri = doc.output('datauristring');
+    (window as any).FlutterBridge.postMessage(JSON.stringify({
+      action: 'downloadFile',
+      url: dataUri,
+      fileName: fileName
+    }));
+    return "success";
+  }
+
+  doc.save(fileName); 
   return "success";
 };

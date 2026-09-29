@@ -61,34 +61,62 @@ export function uploadBytesResumable(refInstance: MySQLStorageRef, file: File | 
       // Start actual upload process asynchronously
       (async () => {
         try {
-          if (progressCallback) progressCallback({ bytesTransferred: 20, totalBytes: 100 });
+          const token = await auth.currentUser?.getIdToken();
+
+          // Detach from Android OS file handles by reading into an in-memory Blob
+          let uploadPayload: Blob = file;
+          try {
+            const buffer = await file.arrayBuffer();
+            uploadPayload = new Blob([buffer], { type: file.type || 'image/jpeg' });
+          } catch (readErr) {
+            console.warn("Could not convert file to in-memory Blob:", readErr);
+          }
 
           const formData = new FormData();
-          formData.append('file', file, filename);
+          formData.append('file', uploadPayload, filename);
           formData.append('uploadPath', uploadPath);
 
-          const token = await auth.currentUser?.getIdToken();
-          const headers: Record<string, string> = {};
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/upload');
           if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
           }
 
-          const res = await fetch('/api/upload', {
-            method: 'POST',
-            headers,
-            body: formData
-          });
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable && progressCallback) {
+              const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
+              progressCallback({ bytesTransferred: percent, totalBytes: 100 });
+            }
+          };
 
-          const data = await res.json();
-          if (!res.ok || !data.success) {
-            throw new Error(data.error || 'Upload failed');
-          }
+          xhr.onload = () => {
+            let data: any = null;
+            try {
+              data = JSON.parse(xhr.responseText);
+            } catch {
+              data = null;
+            }
 
-          // Store the resolved public URL
-          resolvedUrls.set(refInstance.path, data.url);
+            if (xhr.status >= 200 && xhr.status < 300 && data?.success) {
+              resolvedUrls.set(refInstance.path, data.url);
+              if (progressCallback) progressCallback({ bytesTransferred: 100, totalBytes: 100 });
+              if (completeCallback) completeCallback();
+            } else {
+              const errorMsg = data?.error || (xhr.status === 413 ? "File size exceeds server limit (Max 5MB)." : `Upload failed (Status ${xhr.status}: ${xhr.statusText || 'Server Error'})`);
+              if (errorCallback) errorCallback(new Error(errorMsg));
+            }
+          };
 
-          if (progressCallback) progressCallback({ bytesTransferred: 100, totalBytes: 100 });
-          if (completeCallback) completeCallback();
+          xhr.onerror = () => {
+            if (errorCallback) errorCallback(new Error("Network connection failed during upload. Please check your internet connection."));
+          };
+
+          xhr.ontimeout = () => {
+            if (errorCallback) errorCallback(new Error("Upload timed out. Please try again."));
+          };
+
+          xhr.timeout = 90000; // 90 seconds timeout
+          xhr.send(formData);
         } catch (error: any) {
           if (errorCallback) errorCallback(error);
         }
@@ -102,8 +130,16 @@ export function uploadBytesResumable(refInstance: MySQLStorageRef, file: File | 
 export async function uploadBytes(refInstance: MySQLStorageRef, file: File | Blob, metadata: any = {}) {
   const uploadPath = getUploadPath(refInstance.path);
   const filename = refInstance.path.split('/').pop() || 'file';
+  let uploadPayload: Blob = file;
+  try {
+    const buffer = await file.arrayBuffer();
+    uploadPayload = new Blob([buffer], { type: file.type || 'image/jpeg' });
+  } catch (readErr) {
+    console.warn("Could not convert file to in-memory Blob in uploadBytes:", readErr);
+  }
+
   const formData = new FormData();
-  formData.append('file', file, filename);
+  formData.append('file', uploadPayload, filename);
   formData.append('uploadPath', uploadPath);
 
   const token = await auth.currentUser?.getIdToken();
@@ -118,9 +154,17 @@ export async function uploadBytes(refInstance: MySQLStorageRef, file: File | Blo
     body: formData
   });
 
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Upload failed');
+  let data: any = null;
+  const text = await res.text();
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok || !data?.success) {
+    const errorMsg = data?.error || (res.status === 413 ? "File size exceeds server limit (Max 5MB)." : `Upload failed (Status ${res.status}: ${res.statusText || 'Error'})`);
+    throw new Error(errorMsg);
   }
 
   resolvedUrls.set(refInstance.path, data.url);

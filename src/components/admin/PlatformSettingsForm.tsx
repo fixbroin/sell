@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Trash2, PlusCircle, Percent, Save, Loader2, Check, ChevronsUpDown } from "lucide-react";
 import type { PlatformFeeSetting } from '@/types/firestore';
 import { useApplicationConfig } from "@/hooks/useApplicationConfig";
@@ -40,7 +40,6 @@ const platformFeeItemSchema = z.object({
 
 
 const platformSettingsFormSchema = z.object({
-  enableExclusiveFeePolicy: z.boolean().default(true),
   platformFees: z.array(platformFeeItemSchema).optional(),
 });
 
@@ -48,19 +47,17 @@ type PlatformSettingsFormData = z.infer<typeof platformSettingsFormSchema>;
 
 interface PlatformSettingsFormProps {
   initialFees: PlatformFeeSetting[];
-  initialExclusivePolicy?: boolean;
-  onSave: (fees: PlatformFeeSetting[], enableExclusiveFeePolicy: boolean) => Promise<void>;
+  onSave: (fees: PlatformFeeSetting[]) => Promise<void>;
   isSaving: boolean;
 }
 
-export default function PlatformSettingsForm({ initialFees, initialExclusivePolicy = true, onSave, isSaving }: PlatformSettingsFormProps) {
+export default function PlatformSettingsForm({ initialFees, onSave, isSaving }: PlatformSettingsFormProps) {
   const { config: appConfig } = useApplicationConfig();
   const symbol = appConfig?.currencySymbol || '₹';
   const [openTypePickerIndex, setOpenTypePickerIndex] = useState<number | null>(null);
   const form = useForm<PlatformSettingsFormData>({
     resolver: zodResolver(platformSettingsFormSchema),
     defaultValues: {
-      enableExclusiveFeePolicy: initialExclusivePolicy,
       platformFees: [],
     },
   });
@@ -78,11 +75,8 @@ export default function PlatformSettingsForm({ initialFees, initialExclusivePoli
         feeTaxRatePercent: fee.feeTaxRatePercent ?? 0, // Ensure default for older data
         description: fee.description || "Charged per booking to cover platform security and maintain verified pros.",
     }));
-    form.reset({ 
-      enableExclusiveFeePolicy: initialExclusivePolicy,
-      platformFees: feesWithIds 
-    });
-  }, [initialFees, initialExclusivePolicy, form]);
+    form.reset({ platformFees: feesWithIds });
+  }, [initialFees, form]);
 
   const addNewFee = () => {
     append({
@@ -100,54 +94,12 @@ export default function PlatformSettingsForm({ initialFees, initialExclusivePoli
     // The 'id' field in PlatformFeeSetting is client-side for React keys.
     // Firestore documents typically get their ID automatically or you set it as the doc name.
     // Here, 'id' is just part of the array element structure.
-    await onSave(data.platformFees || [], data.enableExclusiveFeePolicy ?? true);
+    await onSave(data.platformFees || []);
   };
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <Card className="shadow-sm border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Fee Coexistence Policy</CardTitle>
-            <CardDescription>
-              Configure how platform fees behave when a minimum booking visiting charge is applied.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <FormField
-              control={form.control}
-              name="enableExclusiveFeePolicy"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm bg-card">
-                  <div className="space-y-1 pr-4">
-                    <FormLabel className="text-base font-semibold">
-                      Exclusive Fee Policy (Only One Fee At A Time)
-                    </FormLabel>
-                    <FormDescription className="text-xs text-muted-foreground leading-relaxed">
-                      {field.value ? (
-                        <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                          Enabled (Exclusive Mode): Visiting charge and platform fees are mutually exclusive. If visiting charge applies for bookings below minimum amount, platform fees are not applied. If above minimum booking, platform fees apply.
-                        </span>
-                      ) : (
-                        <span className="text-blue-700 dark:text-blue-400 font-medium">
-                          Disabled (Both Fees Mode): Both visiting charge and platform fees apply together on bookings below minimum amount.
-                        </span>
-                      )}
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled={isSaving}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader>
             <CardTitle>Manage Platform Fees</CardTitle>

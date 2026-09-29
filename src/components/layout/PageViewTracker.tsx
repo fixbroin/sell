@@ -28,14 +28,14 @@ const PageViewTracker = () => {
   const { settings: marketingSettings, isLoading: isLoadingMarketingSettings } = useMarketingSettings();
   const { user, isLoading: isLoadingAuth } = useAuth();
   const { config: appConfig, isLoading: isLoadingAppConfig } = useApplicationConfig();
-  const initialLogDoneRef = useRef(false);
+  const lastLoggedUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (isVisitorBot || isLoadingMarketingSettings || isLoadingAuth || isLoadingAppConfig || initialLogDoneRef.current) {
+    if (isVisitorBot || isLoadingMarketingSettings || isLoadingAuth || isLoadingAppConfig) {
       return;
     }
 
-    const fullUrl = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+    const fullUrl = `${pathname}${searchParams?.toString() ? `?${searchParams.toString()}` : ''}`;
 
     // Exclude admin, API routes, and common static file extensions from logging
     const excludedPrefixes = ['/admin', '/api/', '/_next/', '/firebase-messaging-sw.js'];
@@ -45,7 +45,11 @@ const PageViewTracker = () => {
       return;
     }
     
-    initialLogDoneRef.current = true; // Mark that we're attempting the initial log for this mount/load
+    // Prevent duplicate logging for the same URL in the same view/render cycle
+    if (lastLoggedUrlRef.current === fullUrl) {
+      return;
+    }
+    lastLoggedUrlRef.current = fullUrl;
 
     const shouldLog = appConfig?.enableVisitorLogging !== false;
 
@@ -67,7 +71,7 @@ const PageViewTracker = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              pathname,
+              pathname: fullUrl,
               userAgent: navigator.userAgent,
             }),
           });
@@ -95,14 +99,8 @@ const PageViewTracker = () => {
         page_title: typeof document !== 'undefined' ? document.title : undefined,
       });
     }
-    
-    // Reset ref for next route change after a short delay to handle potential fast navigations
-    const timer = setTimeout(() => {
-        initialLogDoneRef.current = false;
-    }, 500); 
-    return () => clearTimeout(timer);
 
-  }, [pathname, searchParams, marketingSettings, isLoadingMarketingSettings, user, isLoadingAuth, appConfig, isLoadingAppConfig]);
+  }, [pathname, searchParams, marketingSettings, isLoadingMarketingSettings, user, isLoadingAuth, appConfig, isLoadingAppConfig, isVisitorBot]);
 
   return null; 
 };

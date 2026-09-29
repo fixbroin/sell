@@ -1,22 +1,52 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import type { FirestoreUser, Address } from '@/types/firestore';
+import type { FirestoreUser, Address, UserCart, FirestoreService } from '@/types/firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
-import { UserCircle, Mail, Phone, CalendarDays, CheckCircle, XCircle, Loader2, Edit3, Save, MapPin } from 'lucide-react';
+import { 
+  UserCircle, 
+  Mail, 
+  Phone, 
+  CalendarDays, 
+  CheckCircle, 
+  XCircle, 
+  Loader2, 
+  Edit3, 
+  Save, 
+  MapPin,
+  ShoppingCart,
+  Package,
+  Clock,
+  ExternalLink
+} from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
 import AppImage from '@/components/ui/AppImage';
 import { getTimestampMillis, formatDateInTimezone, formatTimeInTimezone } from '@/lib/utils';
 import { openWhatsAppChooser } from '@/lib/whatsappUtils';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, onSnapshot } from '@/lib/mysqlDb';
+import { useApplicationConfig } from '@/hooks/useApplicationConfig';
+
+interface CartItemDetail {
+  serviceId: string;
+  quantity: number;
+  name: string;
+  slug?: string;
+  imageUrl?: string;
+  price: number;
+  discountedPrice?: number;
+  description?: string;
+}
 
 interface UserDetailsModalProps {
   user: FirestoreUser;
@@ -37,8 +67,94 @@ const userEditSchema = z.object({
 type UserEditFormData = z.infer<typeof userEditSchema>;
 
 export default function UserDetailsModal({ user, onClose, onUpdateUser }: UserDetailsModalProps) {
+  const { config: appConfig } = useApplicationConfig();
+  const symbol = appConfig?.currencySymbol || "₹";
+
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [cartItems, setCartItems] = useState<CartItemDetail[]>([]);
+  const [cartUpdatedAt, setCartUpdatedAt] = useState<any>(null);
+  const [isLoadingCart, setIsLoadingCart] = useState(true);
+
+  const targetUid = user.uid || user.id;
+
+  useEffect(() => {
+    if (!targetUid) {
+      setIsLoadingCart(false);
+      return;
+    }
+
+    setIsLoadingCart(true);
+    const cartDocRef = doc(db, 'userCarts', targetUid);
+
+    const unsubscribe = onSnapshot(cartDocRef, async (docSnap) => {
+      if (!docSnap.exists()) {
+        setCartItems([]);
+        setCartUpdatedAt(null);
+        setIsLoadingCart(false);
+        return;
+      }
+
+      const cartData = docSnap.data() as UserCart;
+      setCartUpdatedAt(cartData.updatedAt || null);
+      const items = cartData.items || [];
+
+      if (items.length === 0) {
+        setCartItems([]);
+        setIsLoadingCart(false);
+        return;
+      }
+
+      try {
+        const itemDetails = await Promise.all(
+          items.map(async (item) => {
+            try {
+              const serviceSnap = await getDoc(doc(db, 'adminServices', item.serviceId));
+              if (serviceSnap.exists()) {
+                const sData = serviceSnap.data() as FirestoreService;
+                return {
+                  serviceId: item.serviceId,
+                  quantity: item.quantity,
+                  name: sData.name || 'Unnamed Service',
+                  slug: sData.slug || '',
+                  imageUrl: sData.imageUrl || '',
+                  price: typeof sData.price === 'number' ? sData.price : 0,
+                  discountedPrice: typeof sData.discountedPrice === 'number' ? sData.discountedPrice : undefined,
+                  description: sData.description || sData.shortDescription || '',
+                };
+              }
+            } catch (err) {
+              console.error('Error fetching service detail for cart item:', item.serviceId, err);
+            }
+            return {
+              serviceId: item.serviceId,
+              quantity: item.quantity,
+              name: `Service (${item.serviceId})`,
+              price: 0,
+            };
+          })
+        );
+        setCartItems(itemDetails);
+      } catch (err) {
+        console.error('Error processing cart items:', err);
+      } finally {
+        setIsLoadingCart(false);
+      }
+    }, (error) => {
+      console.error('Error listening to user cart:', error);
+      setIsLoadingCart(false);
+    });
+
+    return () => unsubscribe();
+  }, [targetUid]);
+
+  const cartTotal = useMemo(() => {
+    return cartItems.reduce((acc, item) => {
+      const effectivePrice = item.discountedPrice !== undefined ? item.discountedPrice : item.price;
+      return acc + effectivePrice * item.quantity;
+    }, 0);
+  }, [cartItems]);
 
   const form = useForm<UserEditFormData>({
     resolver: zodResolver(userEditSchema),
@@ -194,6 +310,123 @@ export default function UserDetailsModal({ user, onClose, onUpdateUser }: UserDe
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No saved addresses for this user.</p>
+              )}
+            </div>
+
+            <Separator className="my-4"/>
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5 text-primary" />
+                  <h3 className="text-lg font-semibold">User Cart</h3>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary">
+                    {cartItems.length} {cartItems.length === 1 ? 'item' : 'items'}
+                  </span>
+                </div>
+                {cartUpdatedAt && (
+                  <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Updated: {formatTimestampForIndia(cartUpdatedAt)}
+                  </span>
+                )}
+              </div>
+
+              {isLoadingCart ? (
+                <div className="flex items-center justify-center p-6 border rounded-xl bg-muted/20">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+                  <span className="text-xs text-muted-foreground">Loading cart items...</span>
+                </div>
+              ) : cartItems.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="space-y-2.5">
+                    {cartItems.map((item) => {
+                      const effectivePrice = item.discountedPrice !== undefined ? item.discountedPrice : item.price;
+                      const itemTotal = effectivePrice * item.quantity;
+                      return (
+                        <div
+                          key={item.serviceId}
+                          className="p-3 sm:p-3.5 border rounded-2xl bg-muted/20 hover:bg-muted/30 transition-colors flex flex-col sm:flex-row sm:items-center gap-3 w-full min-w-0 overflow-hidden"
+                        >
+                          {/* Top / Left Section: Image + Details */}
+                          <div className="flex items-start sm:items-center gap-3 w-full min-w-0 flex-grow">
+                            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-muted flex-shrink-0 border shadow-xs">
+                              {item.imageUrl ? (
+                                <AppImage
+                                  src={item.imageUrl}
+                                  alt={item.name}
+                                  fill
+                                  sizes="64px"
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                  <Package className="h-6 w-6 opacity-40" />
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex-grow min-w-0 w-full">
+                              <div className="flex items-start justify-between gap-1.5 w-full min-w-0">
+                                <h4 className="font-bold text-sm text-foreground line-clamp-2 leading-snug break-words flex-grow min-w-0">
+                                  {item.name}
+                                </h4>
+                                {item.slug && (
+                                  <Link
+                                    href={`/service/${item.slug}`}
+                                    target="_blank"
+                                    className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0 mt-0.5 p-0.5"
+                                    title="View Service Page"
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </Link>
+                                )}
+                              </div>
+                              {item.description && (
+                                <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5 break-words">{item.description}</p>
+                              )}
+                              <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs w-full min-w-0">
+                                <span className="font-semibold text-muted-foreground bg-background/80 px-2 py-0.5 rounded border text-[11px] flex-shrink-0">
+                                  Qty: <strong className="text-foreground">{item.quantity}</strong>
+                                </span>
+                                <span className="text-muted-foreground hidden sm:inline">•</span>
+                                <span className="font-semibold text-primary flex-shrink-0">
+                                  {symbol}{effectivePrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} each
+                                </span>
+                                {item.discountedPrice !== undefined && item.discountedPrice < item.price && (
+                                  <span className="text-[10px] text-muted-foreground line-through flex-shrink-0">
+                                    {symbol}{item.price.toLocaleString('en-IN')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Bottom on mobile / Right on desktop: Item Total */}
+                          <div className="flex sm:flex-col justify-between sm:justify-center items-center sm:items-end pt-2 sm:pt-0 border-t sm:border-t-0 border-border/50 flex-shrink-0 w-full sm:w-auto">
+                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Item Total</span>
+                            <span className="font-black text-sm sm:text-base text-foreground">
+                              {symbol}{itemTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Cart Total Summary */}
+                  <div className="flex items-center justify-between p-3.5 rounded-2xl bg-primary/5 border border-primary/20">
+                    <span className="font-bold text-xs sm:text-sm text-foreground">Estimated Cart Total:</span>
+                    <span className="font-black text-base sm:text-lg text-primary">
+                      {symbol}{cartTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-6 px-4 border rounded-xl bg-muted/10 text-center">
+                  <ShoppingCart className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                  <p className="text-xs font-medium text-muted-foreground">User cart is currently empty</p>
+                  <p className="text-[11px] text-muted-foreground/70">No services currently added in this user's cart.</p>
+                </div>
               )}
             </div>
           </div>

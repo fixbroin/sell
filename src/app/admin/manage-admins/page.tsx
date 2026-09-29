@@ -46,6 +46,7 @@ import {
   Settings2,
   Edit,
   Check,
+  CheckCheck,
   ChevronsUpDown
 } from "lucide-react";
 import { AdminPermissions, PERMISSION_MODULES, DEFAULT_PERMISSIONS } from '@/config/rbac';
@@ -122,6 +123,7 @@ export default function ManageAdminsPage() {
   };
 
   const [editingAdmin, setEditingAdmin] = useState<AdminUser | null>(null);
+  const [editPassword, setEditPassword] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isRolePickerOpen, setIsRolePickerOpen] = useState(false);
@@ -155,6 +157,72 @@ export default function ManageAdminsPage() {
     });
   };
 
+  // Bulk set permissions for new admin
+  const handleBulkSetPermissions = (mode: 'all' | 'read_only' | 'none') => {
+    setNewAdmin(prev => {
+      const nextPermissions: AdminPermissions = {};
+      PERMISSION_MODULES.filter(m => m.id !== 'staff').forEach(mod => {
+        nextPermissions[mod.id] = {
+          read: mode === 'all' || mode === 'read_only',
+          create: mode === 'all',
+          write: mode === 'all',
+          delete: mode === 'all',
+        };
+      });
+      return { ...prev, permissions: nextPermissions };
+    });
+  };
+
+  // Toggle entire column for new admin
+  const handleToggleColumnNew = (type: 'read' | 'create' | 'write' | 'delete', checked: boolean) => {
+    setNewAdmin(prev => {
+      const nextPermissions: AdminPermissions = { ...prev.permissions };
+      PERMISSION_MODULES.filter(m => m.id !== 'staff').forEach(mod => {
+        const current = nextPermissions[mod.id] || { read: false, create: false, write: false, delete: false };
+        const updated = { ...current, [type]: checked };
+        if (checked && (type === 'create' || type === 'write' || type === 'delete')) {
+          updated.read = true;
+        }
+        nextPermissions[mod.id] = updated;
+      });
+      return { ...prev, permissions: nextPermissions };
+    });
+  };
+
+  // Toggle all permissions for a single row for new admin
+  const handleToggleRowNew = (moduleId: string) => {
+    setNewAdmin(prev => {
+      const current = prev.permissions[moduleId] || { read: false, create: false, write: false, delete: false };
+      const isAllChecked = current.read && current.create && current.write && current.delete;
+      const nextState = !isAllChecked;
+      return {
+        ...prev,
+        permissions: {
+          ...prev.permissions,
+          [moduleId]: {
+            read: nextState,
+            create: nextState,
+            write: nextState,
+            delete: nextState,
+          }
+        }
+      };
+    });
+  };
+
+  const isNewColumnAllChecked = (type: 'read' | 'create' | 'write' | 'delete') => {
+    const modules = PERMISSION_MODULES.filter(m => m.id !== 'staff');
+    return modules.length > 0 && modules.every(m => newAdmin.permissions[m.id]?.[type]);
+  };
+
+  const areAllNewPermissionsChecked = () => {
+    const modules = PERMISSION_MODULES.filter(m => m.id !== 'staff');
+    return modules.length > 0 && modules.every(m => {
+      const p = newAdmin.permissions[m.id];
+      return p?.read && p?.create && p?.write && p?.delete;
+    });
+  };
+
   const handleEditPermissionChange = (moduleId: string, type: 'read' | 'create' | 'write' | 'delete', checked: boolean) => {
     if (!editingAdmin) return;
     setEditingAdmin(prev => {
@@ -172,11 +240,86 @@ export default function ManageAdminsPage() {
     });
   };
 
+  // Bulk set permissions for editing admin
+  const handleBulkSetEditPermissions = (mode: 'all' | 'read_only' | 'none') => {
+    if (!editingAdmin) return;
+    setEditingAdmin(prev => {
+      if (!prev) return prev;
+      const nextPermissions: AdminPermissions = {};
+      PERMISSION_MODULES.filter(m => m.id !== 'staff').forEach(mod => {
+        nextPermissions[mod.id] = {
+          read: mode === 'all' || mode === 'read_only',
+          create: mode === 'all',
+          write: mode === 'all',
+          delete: mode === 'all',
+        };
+      });
+      return { ...prev, permissions: nextPermissions };
+    });
+  };
+
+  // Toggle entire column for editing admin
+  const handleToggleColumnEdit = (type: 'read' | 'create' | 'write' | 'delete', checked: boolean) => {
+    if (!editingAdmin) return;
+    setEditingAdmin(prev => {
+      if (!prev) return prev;
+      const nextPermissions: AdminPermissions = { ...(prev.permissions || {}) };
+      PERMISSION_MODULES.filter(m => m.id !== 'staff').forEach(mod => {
+        const current = nextPermissions[mod.id] || { read: false, create: false, write: false, delete: false };
+        const updated = { ...current, [type]: checked };
+        if (checked && (type === 'create' || type === 'write' || type === 'delete')) {
+          updated.read = true;
+        }
+        nextPermissions[mod.id] = updated;
+      });
+      return { ...prev, permissions: nextPermissions };
+    });
+  };
+
+  // Toggle all permissions for a single row for editing admin
+  const handleToggleRowEdit = (moduleId: string) => {
+    if (!editingAdmin) return;
+    setEditingAdmin(prev => {
+      if (!prev) return prev;
+      const current = prev.permissions?.[moduleId] || { read: false, create: false, write: false, delete: false };
+      const isAllChecked = current.read && current.create && current.write && current.delete;
+      const nextState = !isAllChecked;
+      return {
+        ...prev,
+        permissions: {
+          ...(prev.permissions || {}),
+          [moduleId]: {
+            read: nextState,
+            create: nextState,
+            write: nextState,
+            delete: nextState,
+          }
+        }
+      };
+    });
+  };
+
+  const isEditColumnAllChecked = (type: 'read' | 'create' | 'write' | 'delete') => {
+    if (!editingAdmin?.permissions) return false;
+    const modules = PERMISSION_MODULES.filter(m => m.id !== 'staff');
+    return modules.length > 0 && modules.every(m => editingAdmin.permissions?.[m.id]?.[type]);
+  };
+
+  const areAllEditPermissionsChecked = () => {
+    if (!editingAdmin?.permissions) return false;
+    const modules = PERMISSION_MODULES.filter(m => m.id !== 'staff');
+    return modules.length > 0 && modules.every(m => {
+      const p = editingAdmin.permissions?.[m.id];
+      return p?.read && p?.create && p?.write && p?.delete;
+    });
+  };
+
   const openEditDialog = (admin: AdminUser) => {
     setEditingAdmin({
       ...admin,
       permissions: admin.permissions ? JSON.parse(JSON.stringify(admin.permissions)) : JSON.parse(JSON.stringify(DEFAULT_PERMISSIONS))
     });
+    setEditPassword('');
     setIsEditDialogOpen(true);
   };
 
@@ -184,13 +327,48 @@ export default function ManageAdminsPage() {
     if (!editingAdmin) return;
     setIsUpdating(true);
     try {
-      await updateDoc(doc(db, 'admins', editingAdmin.id), {
-        permissions: editingAdmin.permissions,
-        role: editingAdmin.role // allow role update too
-      });
-      toast({ title: "Success", description: "Permissions updated successfully" });
+      if (editPassword.trim()) {
+        if (!validatePassword(editPassword.trim())) {
+          toast({ 
+            title: "Weak Password", 
+            description: "Password must be at least 8 characters and include uppercase, numbers, and symbols.", 
+            variant: "destructive" 
+          });
+          setIsUpdating(false);
+          return;
+        }
+
+        const token = await currentUser?.getIdToken();
+        const response = await fetch('/api/admin/manage-staff', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            email: editingAdmin.email,
+            name: editingAdmin.name,
+            password: editPassword.trim(),
+            role: editingAdmin.role,
+            permissions: editingAdmin.permissions,
+          })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || "Failed to update staff credentials");
+        }
+      } else {
+        await updateDoc(doc(db, 'admins', editingAdmin.id), {
+          permissions: editingAdmin.permissions,
+          role: editingAdmin.role // allow role update too
+        });
+      }
+
+      toast({ title: "Success", description: "Admin settings and permissions updated successfully" });
       setIsEditDialogOpen(false);
       setEditingAdmin(null);
+      setEditPassword('');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An error occurred";
       toast({ title: "Error", description: errorMessage, variant: "destructive" });
@@ -443,30 +621,118 @@ export default function ManageAdminsPage() {
 
             {newAdmin.role !== 'super_admin' && (
                 <Card className="border-none shadow-xl rounded-[2rem] bg-card overflow-hidden">
-                    <CardHeader className="bg-primary/5">
-                        <CardTitle className="text-xl font-black flex items-center">
-                            <Settings2 className="h-5 w-5 mr-2 text-primary" />
-                            2. Permission Matrix
-                        </CardTitle>
-                        <CardDescription>Select which modules this staff can access.</CardDescription>
+                    <CardHeader className="bg-primary/5 pb-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div>
+                                <CardTitle className="text-xl font-black flex items-center">
+                                    <Settings2 className="h-5 w-5 mr-2 text-primary" />
+                                    2. Permission Matrix
+                                </CardTitle>
+                                <CardDescription>Select which modules this staff can access.</CardDescription>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleBulkSetPermissions('all')}
+                                    className="h-7 px-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider bg-primary/10 text-primary border-primary/20 hover:bg-primary hover:text-white transition-all shadow-xs"
+                                >
+                                    <CheckCheck className="h-3.5 w-3.5 mr-1" />
+                                    Select All
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleBulkSetPermissions('read_only')}
+                                    className="h-7 px-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                >
+                                    <Eye className="h-3.5 w-3.5 mr-1" />
+                                    View Only
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleBulkSetPermissions('none')}
+                                    className="h-7 px-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider text-destructive border-destructive/20 hover:bg-destructive/10 transition-all"
+                                >
+                                    <XCircle className="h-3.5 w-3.5 mr-1" />
+                                    Clear All
+                                </Button>
+                            </div>
+                        </div>
                     </CardHeader>
                     <CardContent className="p-0">
                         <ScrollArea className="h-[450px]">
                             <Table>
                                 <TableHeader className="bg-muted/30 sticky top-0 z-10">
                                     <TableRow className="hover:bg-transparent border-none">
-                                        <TableHead className="text-[10px] font-black uppercase tracking-widest pl-6">Module</TableHead>
-                                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">View</TableHead>
-                                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">Create</TableHead>
-                                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">Edit</TableHead>
-                                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-center pr-6">Delete</TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase tracking-widest pl-6">
+                                            <div className="flex items-center gap-2">
+                                                <Checkbox
+                                                    checked={areAllNewPermissionsChecked()}
+                                                    onCheckedChange={(c) => handleBulkSetPermissions(c ? 'all' : 'none')}
+                                                    className="rounded border-primary/40 data-[state=checked]:bg-primary"
+                                                    title="Toggle All Permissions"
+                                                />
+                                                <span>Module</span>
+                                            </div>
+                                        </TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">
+                                            <div className="flex items-center justify-center gap-1.5 cursor-pointer select-none" onClick={() => handleToggleColumnNew('read', !isNewColumnAllChecked('read'))} title="Toggle entire View column">
+                                                <span>View</span>
+                                                <Checkbox 
+                                                    checked={isNewColumnAllChecked('read')} 
+                                                    onCheckedChange={(c) => handleToggleColumnNew('read', !!c)} 
+                                                    className="h-3.5 w-3.5 rounded border-primary/40 data-[state=checked]:bg-primary"
+                                                />
+                                            </div>
+                                        </TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">
+                                            <div className="flex items-center justify-center gap-1.5 cursor-pointer select-none" onClick={() => handleToggleColumnNew('create', !isNewColumnAllChecked('create'))} title="Toggle entire Create column">
+                                                <span>Create</span>
+                                                <Checkbox 
+                                                    checked={isNewColumnAllChecked('create')} 
+                                                    onCheckedChange={(c) => handleToggleColumnNew('create', !!c)} 
+                                                    className="h-3.5 w-3.5 rounded border-primary/40 data-[state=checked]:bg-primary"
+                                                />
+                                            </div>
+                                        </TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">
+                                            <div className="flex items-center justify-center gap-1.5 cursor-pointer select-none" onClick={() => handleToggleColumnNew('write', !isNewColumnAllChecked('write'))} title="Toggle entire Edit column">
+                                                <span>Edit</span>
+                                                <Checkbox 
+                                                    checked={isNewColumnAllChecked('write')} 
+                                                    onCheckedChange={(c) => handleToggleColumnNew('write', !!c)} 
+                                                    className="h-3.5 w-3.5 rounded border-primary/40 data-[state=checked]:bg-primary"
+                                                />
+                                            </div>
+                                        </TableHead>
+                                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-center pr-6">
+                                            <div className="flex items-center justify-center gap-1.5 cursor-pointer select-none" onClick={() => handleToggleColumnNew('delete', !isNewColumnAllChecked('delete'))} title="Toggle entire Delete column">
+                                                <span>Delete</span>
+                                                <Checkbox 
+                                                    checked={isNewColumnAllChecked('delete')} 
+                                                    onCheckedChange={(c) => handleToggleColumnNew('delete', !!c)} 
+                                                    className="h-3.5 w-3.5 rounded border-primary/40 data-[state=checked]:bg-primary"
+                                                />
+                                            </div>
+                                        </TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {PERMISSION_MODULES.filter(m => m.id !== 'staff').map((module) => (
-                                        <TableRow key={module.id} className="border-b border-muted/40 last:border-none">
-                                            <TableCell className="pl-6 py-4">
-                                                <span className="font-bold text-xs">{module.label}</span>
+                                        <TableRow key={module.id} className="border-b border-muted/40 last:border-none group">
+                                            <TableCell className="pl-6 py-3.5">
+                                                <div 
+                                                    className="flex items-center gap-2 cursor-pointer select-none"
+                                                    onClick={() => handleToggleRowNew(module.id)}
+                                                    title="Click to toggle all permissions for this row"
+                                                >
+                                                    <span className="font-bold text-xs group-hover:text-primary transition-colors">{module.label}</span>
+                                                </div>
                                             </TableCell>
                                             <TableCell className="text-center">
                                                 <Checkbox 
@@ -697,33 +963,138 @@ export default function ManageAdminsPage() {
       {/* Edit Permissions Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl rounded-[2rem] border-none shadow-2xl overflow-hidden p-0">
-          <DialogHeader className="p-3 bg-primary/5 pb-4">
-            <DialogTitle className="text-xl font-black flex items-center">
-              <Settings2 className="h-5 w-5 mr-2 text-primary" />
-              Edit Permissions for {editingAdmin?.name}
-            </DialogTitle>
-            <DialogDescription>
-              Modify the module access levels for this staff member.
-            </DialogDescription>
+          <DialogHeader className="p-4 bg-primary/5 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <DialogTitle className="text-xl font-black flex items-center">
+                  <Settings2 className="h-5 w-5 mr-2 text-primary" />
+                  Edit Permissions for {editingAdmin?.name}
+                </DialogTitle>
+                <DialogDescription>
+                  Modify the module access levels for this staff member.
+                </DialogDescription>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleBulkSetEditPermissions('all')}
+                  className="h-7 px-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider bg-primary/10 text-primary border-primary/20 hover:bg-primary hover:text-white transition-all shadow-xs"
+                >
+                  <CheckCheck className="h-3.5 w-3.5 mr-1" />
+                  Select All
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleBulkSetEditPermissions('read_only')}
+                  className="h-7 px-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                >
+                  <Eye className="h-3.5 w-3.5 mr-1" />
+                  View Only
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleBulkSetEditPermissions('none')}
+                  className="h-7 px-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider text-destructive border-destructive/20 hover:bg-destructive/10 transition-all"
+                >
+                  <XCircle className="h-3.5 w-3.5 mr-1" />
+                  Clear All
+                </Button>
+              </div>
+            </div>
           </DialogHeader>
+
+          {/* Optional password reset field */}
+          <div className="px-6 py-3 border-b border-muted/30 bg-muted/10">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1">
+              <label className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">
+                Reset Password (Optional)
+              </label>
+              <span className="text-[10px] text-muted-foreground">Leave blank to keep existing password</span>
+            </div>
+            <Input
+              type="password"
+              placeholder="Enter new password (min 8 chars with upper, num, symbol)"
+              value={editPassword}
+              onChange={(e) => setEditPassword(e.target.value)}
+              className="h-10 text-xs rounded-xl bg-background"
+            />
+          </div>
           
-          <ScrollArea className="max-h-[60vh] px-6 pb-6">
+          <ScrollArea className="max-h-[50vh] px-6 pb-6">
             {editingAdmin && (
               <Table>
                   <TableHeader className="bg-muted/30 sticky top-0 z-10">
                       <TableRow className="hover:bg-transparent border-none">
-                          <TableHead className="text-[10px] font-black uppercase tracking-widest pl-4">Module</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">View</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">Create</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">Edit</TableHead>
-                          <TableHead className="text-[10px] font-black uppercase tracking-widest text-center pr-4">Delete</TableHead>
+                          <TableHead className="text-[10px] font-black uppercase tracking-widest pl-4">
+                              <div className="flex items-center gap-2">
+                                  <Checkbox
+                                      checked={areAllEditPermissionsChecked()}
+                                      onCheckedChange={(c) => handleBulkSetEditPermissions(c ? 'all' : 'none')}
+                                      className="rounded border-primary/40 data-[state=checked]:bg-primary"
+                                      title="Toggle All Permissions"
+                                  />
+                                  <span>Module</span>
+                              </div>
+                          </TableHead>
+                          <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">
+                              <div className="flex items-center justify-center gap-1.5 cursor-pointer select-none" onClick={() => handleToggleColumnEdit('read', !isEditColumnAllChecked('read'))} title="Toggle entire View column">
+                                  <span>View</span>
+                                  <Checkbox 
+                                      checked={isEditColumnAllChecked('read')} 
+                                      onCheckedChange={(c) => handleToggleColumnEdit('read', !!c)} 
+                                      className="h-3.5 w-3.5 rounded border-primary/40 data-[state=checked]:bg-primary"
+                                  />
+                              </div>
+                          </TableHead>
+                          <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">
+                              <div className="flex items-center justify-center gap-1.5 cursor-pointer select-none" onClick={() => handleToggleColumnEdit('create', !isEditColumnAllChecked('create'))} title="Toggle entire Create column">
+                                  <span>Create</span>
+                                  <Checkbox 
+                                      checked={isEditColumnAllChecked('create')} 
+                                      onCheckedChange={(c) => handleToggleColumnEdit('create', !!c)} 
+                                      className="h-3.5 w-3.5 rounded border-primary/40 data-[state=checked]:bg-primary"
+                                  />
+                              </div>
+                          </TableHead>
+                          <TableHead className="text-[10px] font-black uppercase tracking-widest text-center">
+                              <div className="flex items-center justify-center gap-1.5 cursor-pointer select-none" onClick={() => handleToggleColumnEdit('write', !isEditColumnAllChecked('write'))} title="Toggle entire Edit column">
+                                  <span>Edit</span>
+                                  <Checkbox 
+                                      checked={isEditColumnAllChecked('write')} 
+                                      onCheckedChange={(c) => handleToggleColumnEdit('write', !!c)} 
+                                      className="h-3.5 w-3.5 rounded border-primary/40 data-[state=checked]:bg-primary"
+                                  />
+                              </div>
+                          </TableHead>
+                          <TableHead className="text-[10px] font-black uppercase tracking-widest text-center pr-4">
+                              <div className="flex items-center justify-center gap-1.5 cursor-pointer select-none" onClick={() => handleToggleColumnEdit('delete', !isEditColumnAllChecked('delete'))} title="Toggle entire Delete column">
+                                  <span>Delete</span>
+                                  <Checkbox 
+                                      checked={isEditColumnAllChecked('delete')} 
+                                      onCheckedChange={(c) => handleToggleColumnEdit('delete', !!c)} 
+                                      className="h-3.5 w-3.5 rounded border-primary/40 data-[state=checked]:bg-primary"
+                                  />
+                              </div>
+                          </TableHead>
                       </TableRow>
                   </TableHeader>
                   <TableBody>
                       {PERMISSION_MODULES.filter(m => m.id !== 'staff').map((module) => (
-                          <TableRow key={module.id} className="border-b border-muted/40 last:border-none">
+                          <TableRow key={module.id} className="border-b border-muted/40 last:border-none group">
                               <TableCell className="pl-4 py-3">
-                                  <span className="font-bold text-xs">{module.label}</span>
+                                  <div 
+                                      className="flex items-center gap-2 cursor-pointer select-none"
+                                      onClick={() => handleToggleRowEdit(module.id)}
+                                      title="Click to toggle all permissions for this row"
+                                  >
+                                      <span className="font-bold text-xs group-hover:text-primary transition-colors">{module.label}</span>
+                                  </div>
                               </TableCell>
                               <TableCell className="text-center">
                                   <Checkbox 
@@ -742,14 +1113,14 @@ export default function ManageAdminsPage() {
                               <TableCell className="text-center">
                                   <Checkbox 
                                       checked={editingAdmin.permissions?.[module.id]?.write} 
-                                      onCheckedChange={(checked) => handleEditPermissionChange(module.id, 'write', !!checked)}
+                                      onCheckedChange={(checked) => handleEditPermissionChange(module.id, 'write', !!checked)} 
                                       className="rounded-md border-primary/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                                   />
                               </TableCell>
                               <TableCell className="text-center pr-4">
                                   <Checkbox 
                                       checked={editingAdmin.permissions?.[module.id]?.delete} 
-                                      onCheckedChange={(checked) => handleEditPermissionChange(module.id, 'delete', !!checked)}
+                                      onCheckedChange={(checked) => handleEditPermissionChange(module.id, 'delete', !!checked)} 
                                       className="rounded-md border-primary/20 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                                   />
                               </TableCell>

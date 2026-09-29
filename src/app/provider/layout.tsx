@@ -264,7 +264,7 @@ export default function ProviderLayout({ children }: PropsWithChildren) {
       if (isProviderApproved !== null) {
         // Immediate redirection if not approved and on a protected page
         if (isProviderApproved === false && pathname !== '/provider-registration') {
-            router.push('/');
+            router.push('/provider-registration');
         }
         return;
       }
@@ -282,15 +282,15 @@ export default function ProviderLayout({ children }: PropsWithChildren) {
             setIsProviderApproved(false);
             sessionStorage.setItem(`provider_approved_${providerUser.uid}`, 'false');
             if (pathname !== '/provider-registration') { 
-              toast({ title: "Access Denied", description: "Your provider application is not yet approved or has been rejected.", variant: "destructive" });
-              router.push('/');
+              toast({ title: "Application Under Review", description: "Your provider application is not yet approved. You can view your application status here." });
+              router.push('/provider-registration');
             }
           }
         } else {
           setIsProviderApproved(false);
           sessionStorage.setItem(`provider_approved_${providerUser.uid}`, 'false');
            if (pathname !== '/provider-registration') {
-              toast({ title: "Application Not Found", description: "Provider application not found. Please complete registration.", variant: "destructive" });
+              toast({ title: "Provider Registration", description: "No provider profile found. Please complete registration to get started." });
               router.push('/provider-registration');
            }
         }
@@ -298,8 +298,7 @@ export default function ProviderLayout({ children }: PropsWithChildren) {
         console.error("Error checking provider status:", error);
         // On error, don't cache as false, just allow one retry if they navigate again
          if (pathname !== '/provider-registration') {
-            toast({ title: "Error", description: "Could not verify provider status.", variant: "destructive" });
-            router.push('/');
+            router.push('/provider-registration');
          }
       } finally {
         setIsCheckingApproval(false); 

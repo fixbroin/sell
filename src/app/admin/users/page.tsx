@@ -22,6 +22,7 @@ import AppImage from '@/components/ui/AppImage';
 import { openWhatsAppChooser } from '@/lib/whatsappUtils';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { isWebView, requestFileDownload } from '@/lib/webview-bridge';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getArchivedUsers } from '@/lib/adminDashboardUtils';
@@ -380,15 +381,29 @@ export default function AdminUsersPage() {
       
       const bom = '\uFEFF';
       const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${filename}.csv`;
-      link.click();
+      if (isWebView()) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (reader.result) {
+            requestFileDownload(reader.result as string, `${filename}.csv`);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } else {
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${filename}.csv`;
+        link.click();
+      }
     } else if (format === 'pdf') {
       const doc = new jsPDF();
       doc.text("User Directory Export", 14, 16);
       (doc as unknown as { autoTable: (options: Record<string, unknown>) => void }).autoTable({ head: [headers], body: data, startY: 20 });
-      doc.save(`${filename}.pdf`);
+      if (isWebView()) {
+        requestFileDownload(doc.output('datauristring'), `${filename}.pdf`);
+      } else {
+        doc.save(`${filename}.pdf`);
+      }
     }
   };
 

@@ -53,16 +53,20 @@ const ProtectedRoute: React.FC<PropsWithChildren> = ({ children }) => {
         } else {
           setIsProviderApproved(false);
           if (isProviderRoute && pathname !== '/provider-registration') { 
-             toast({ title: "Access Denied", description: "Your provider application is not approved or found.", variant: "destructive" });
-             router.push('/');
+             toast({ 
+               title: docSnap.exists() ? "Application Under Review" : "Provider Registration Required", 
+               description: docSnap.exists() 
+                 ? "Your provider application is not yet approved. You can check your application status here." 
+                 : "No provider profile found. Please complete registration to become a service partner." 
+             });
+             router.push('/provider-registration');
           }
         }
       } catch (error) {
         console.error("Error checking provider status:", error);
         setIsProviderApproved(false);
         if (isProviderRoute && pathname !== '/provider-registration') {
-            toast({ title: "Error", description: "Could not verify provider status.", variant: "destructive" });
-            router.push('/');
+            router.push('/provider-registration');
         }
       } finally {
         setIsCheckingProviderStatus(false);
@@ -196,8 +200,8 @@ const ProtectedRoute: React.FC<PropsWithChildren> = ({ children }) => {
   } else if (pathname.startsWith('/provider') && pathname !== '/provider-registration' && !isProviderApproved) {
       return (
         <div className="flex flex-col justify-center items-center min-h-screen bg-background space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin text-destructive" />
-          <p className="text-sm font-semibold text-destructive">Access Denied to Provider Panel</p>
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="text-sm font-semibold text-muted-foreground animate-pulse">Redirecting to Provider Registration...</p>
         </div>
       );
   }

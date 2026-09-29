@@ -1349,35 +1349,6 @@ export default function AdminSettingsPage() {
                           {!canSetVcTaxInclusive && <p className="text-xs text-muted-foreground">Enable tax on visiting charge and set a rate  0 to configure this.</p>}
                         </div>
                     </div>
-
-                    {/* Exclusive Fee Policy (Visiting Charge vs Platform Fee) */}
-                    <div className="pt-4 mt-4 border-t">
-                      <div className="flex items-center justify-between rounded-lg border p-4 shadow-sm bg-card">
-                        <div className="space-y-1 pr-4">
-                          <Label htmlFor="enableExclusiveFeePolicy" className="text-base font-semibold">
-                            Exclusive Fee Policy (Only One Fee At A Time)
-                          </Label>
-                          <p className="text-xs text-muted-foreground leading-relaxed">
-                            {settings.enableExclusiveFeePolicy !== false ? (
-                              <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                                Enabled (Exclusive Mode): Visiting charge and platform fees are mutually exclusive. If visiting charge applies for bookings below minimum amount, platform fees are not applied. If above minimum booking, platform fees apply.
-                              </span>
-                            ) : (
-                              <span className="text-blue-700 dark:text-blue-400 font-medium">
-                                Disabled (Both Fees Mode): Both visiting charge and platform fees apply together on bookings below minimum amount.
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                        <Switch
-                          id="enableExclusiveFeePolicy"
-                          name="enableExclusiveFeePolicy"
-                          checked={settings.enableExclusiveFeePolicy !== false}
-                          onCheckedChange={(checked) => handleSwitchChange('enableExclusiveFeePolicy', checked)}
-                          disabled={isSaving}
-                        />
-                      </div>
-                    </div>
                   </div>
                 )}
               </div>
@@ -1516,7 +1487,7 @@ export default function AdminSettingsPage() {
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="senderEmail">Sender Email Address</Label>
-                      <Input id="senderEmail" name="senderEmail" type="email" value={settings.senderEmail} onChange={handleInputChange} placeholder="e.g., no-reply@yourdomain.com" disabled={isSaving}/>
+                      <Input id="senderEmail" name="senderEmail" type="email" value={settings.senderEmail} onChange={handleInputChange} placeholder="e.g., no-reply@yourbrand.in" disabled={isSaving}/>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">

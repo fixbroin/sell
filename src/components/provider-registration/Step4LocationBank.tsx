@@ -27,7 +27,7 @@ import { compressImage } from "@/lib/imageCompressor";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-const STORAGE_KEY = 'fixbro_reg_step4';
+const STORAGE_KEY = 'yourbrand_reg_step4';
 
 const ProviderMapZoneSelector = dynamic(() => import('@/components/provider-registration/ProviderMapZoneSelector'), {
   loading: () => <div className="flex items-center justify-center h-64 bg-muted rounded-md"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>,
@@ -616,7 +616,7 @@ export default function Step4LocationBank({
                           </div>
                         )}
                       </div>
-                      <FormControl><Input type="file" accept="image/png, image/jpeg, image/webp" onChange={async (e) => { if (e.target.files?.[0]) { const file = e.target.files[0]; if (file.size > 50 * 1024 * 1024) { toast({ title: "File Too Large", description: "Image must be < 50MB.", variant: "destructive" }); e.target.value = ""; return; } let fileToSet = file; try { fileToSet = await compressImage(file); } catch (err) { console.error("Compression failed", err); } setSelectedChequeFile(fileToSet); setCurrentChequePreview(URL.createObjectURL(fileToSet)); form.setValue('cancelledChequeUrl', null, { shouldValidate: false }); } }} ref={chequeFileInputRef} className="hidden" disabled={effectiveIsSaving}/></FormControl>
+                      <FormControl><Input type="file" accept="image/*" onChange={async (e) => { if (e.target.files?.[0]) { const file = e.target.files[0]; if (file.size > 50 * 1024 * 1024) { toast({ title: "File Too Large", description: "Image must be < 50MB.", variant: "destructive" }); e.target.value = ""; return; } let fileToSet = file; try { fileToSet = await compressImage(file); } catch (err) { console.error("Compression failed", err); } setSelectedChequeFile(fileToSet); setCurrentChequePreview(URL.createObjectURL(fileToSet)); form.setValue('cancelledChequeUrl', null, { shouldValidate: false }); e.target.value = ""; } }} ref={chequeFileInputRef} className="hidden" disabled={effectiveIsSaving}/></FormControl>
                       <div className="flex justify-between items-center text-[10px] text-muted-foreground mt-1">
                         <span>Max size: 50MB</span>
                         {(displayChequePreviewUrl || selectedChequeFile) && (
@@ -694,9 +694,9 @@ export default function Step4LocationBank({
                           <FormControl>
                             <input 
                               type="file" 
-                              accept="image/png, image/jpeg, image/webp" 
+                              accept="image/*" 
                               className="hidden"
-                              onChange={async (e) => { if (e.target.files?.[0]) { const file = e.target.files[0]; if (file.size > 50 * 1024 * 1024) { toast({ title: "File Too Large", description: "Image must be < 50MB.", variant: "destructive" }); return; } let fileToSet = file; try { fileToSet = await compressImage(file); } catch (err) { console.error("Compression failed", err); } setSelectedSignatureFile(fileToSet); setCurrentSignaturePreview(URL.createObjectURL(fileToSet)); form.setValue('signatureUrl', null, { shouldValidate: false }); } }}
+                              onChange={async (e) => { if (e.target.files?.[0]) { const file = e.target.files[0]; if (file.size > 50 * 1024 * 1024) { toast({ title: "File Too Large", description: "Image must be < 50MB.", variant: "destructive" }); return; } let fileToSet = file; try { fileToSet = await compressImage(file); } catch (err) { console.error("Compression failed", err); } setSelectedSignatureFile(fileToSet); setCurrentSignaturePreview(URL.createObjectURL(fileToSet)); form.setValue('signatureUrl', null, { shouldValidate: false }); e.target.value = ""; } }}
                               ref={signatureFileInputRef} 
                               disabled={effectiveIsSaving}
                             />

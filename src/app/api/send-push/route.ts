@@ -131,6 +131,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No FCM tokens found for this user' }, { status: 200 });
     }
 
+    // Order sound plays ONLY for receiving a new booking! Everything else gets default sound.
+    const isBookingReceiving = sound === 'order' ||
+      ['new_order', 'booking_created'].includes(pushType) ||
+      finalTitle.toLowerCase().includes('new order') ||
+      finalTitle.toLowerCase().includes('new booking') ||
+      finalTitle.toLowerCase().includes('booking received') ||
+      finalTitle.toLowerCase().includes('booking placed') ||
+      finalTitle.toLowerCase().includes('new job request');
+
+    const isOrderSound = isBookingReceiving;
+    const targetSoundName = isOrderSound ? 'order_sound' : 'default';
+
+    const isFixbro = (process.env.NEXT_PUBLIC_APP_NAME || '').toLowerCase().includes('fixbro');
+    const channelPrefix = 'yourbrand';
+
+    const targetChannelId = isOrderSound
+      ? `${channelPrefix}_new_bookings_channel_v3`
+      : `${channelPrefix}_general_channel_v3`;
+
     // 2. Prepare the message
     const messagePayload = {
       notification: {
@@ -138,9 +157,46 @@ export async function POST(request: Request) {
         body: finalBody,
       },
       data: {
+        title: finalTitle,
+        body: finalBody,
         click_action: href || '/',
+        url: href || '/',
+        targetUrl: href || '/',
         icon: icon || '/android-chrome-192x192.png',
-        sound: sound || 'default', // Pass internal sound identifier
+        sound: isOrderSound ? 'order' : 'default',
+        type: customType || pushType || 'order_status',
+        channelKey: targetChannelId,
+        channel_id: targetChannelId,
+        priority: 'high',
+      },
+      android: {
+        priority: 'high' as const,
+        notification: {
+          title: finalTitle,
+          body: finalBody,
+          channelId: targetChannelId,
+          icon: 'ic_notification',
+          color: '#2563EB',
+          sound: isOrderSound ? 'order_sound' : 'default',
+          priority: 'max' as const,
+          defaultVibrateTimings: true,
+          defaultSound: !isOrderSound,
+          visibility: 'public' as const,
+          clickAction: href || '/',
+          ticker: finalTitle,
+        },
+        data: {
+          title: finalTitle,
+          body: finalBody,
+          url: href || '/',
+          targetUrl: href || '/',
+          click_action: href || '/',
+          sound: isOrderSound ? 'order' : 'default',
+          type: customType || pushType || 'order_status',
+          channelKey: targetChannelId,
+          channel_id: targetChannelId,
+          priority: 'high',
+        }
       },
       // Essential for background handling in modern browsers
       webpush: {
@@ -157,14 +213,14 @@ export async function POST(request: Request) {
     };
 
     // 3. Send to all registered tokens for this user
+    const deadTokens: string[] = [];
+
     const sendPromises = tokens.map(token => 
       messaging.send({
         ...messagePayload,
         token,
       }).catch(async (err: any) => {
-        console.error(`Failed to send push to token ${token}:`, err);
-        
-        // Handle dead or invalid tokens
+        // Check if token has become dead or invalid
         const isDeadToken = 
             err.code === 'messaging/registration-token-not-registered' || 
             err.code === 'messaging/invalid-argument' ||
@@ -174,21 +230,42 @@ export async function POST(request: Request) {
             err.errorInfo?.code === 'messaging/registration-token-not-registered';
 
         if (isDeadToken) {
-            console.log(`Token ${token} is no longer valid. Deleting from Firestore for user ${userId}...`);
-            try {
-                await adminDb.collection('users').doc(userId).update({
-                    [`fcmTokens.${token}`]: admin.firestore.FieldValue.delete()
-                });
-                console.log(`Successfully removed dead token ${token} for user ${userId}`);
-            } catch (deleteErr) {
-                console.error(`Failed to delete dead token ${token} from Firestore:`, deleteErr);
-            }
+            console.warn(`[send-push] FCM token unregistered/expired for user ${userId} (${token.slice(0, 20)}...). Queued for removal.`);
+            deadTokens.push(token);
+        } else {
+            console.error(`Failed to send push to token ${token}:`, err);
         }
         return null;
       })
     );
 
     await Promise.all(sendPromises);
+
+    // Prune dead tokens directly from MySQL user document
+    if (deadTokens.length > 0) {
+      try {
+        const freshUserDoc = await adminDb.collection('users').doc(userId).get();
+        if (freshUserDoc.exists) {
+          const freshData = freshUserDoc.data() || {};
+          const currentTokens = { ...(freshData.fcmTokens || {}) };
+          let changed = false;
+          for (const dToken of deadTokens) {
+            if (dToken in currentTokens) {
+              delete currentTokens[dToken];
+              changed = true;
+            }
+          }
+          if (changed) {
+            await adminDb.collection('users').doc(userId).update({
+              fcmTokens: currentTokens
+            });
+            console.log(`[send-push] Successfully pruned ${deadTokens.length} dead FCM token(s) for user ${userId}`);
+          }
+        }
+      } catch (pruneErr) {
+        console.error(`[send-push] Failed to prune dead tokens for user ${userId}:`, pruneErr);
+      }
+    }
 
     return NextResponse.json({ success: true, message: `Push sent to ${tokens.length} devices.` });
 

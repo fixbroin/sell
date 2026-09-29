@@ -449,7 +449,7 @@ export default function Step2PersonalInfo({
                 <FormControl>
                   <Input 
                     type="file" 
-                    accept="image/png, image/jpeg, image/webp" 
+                    accept="image/*" 
                     onChange={handleFileSelected} 
                     ref={fileInputRef} 
                     className="hidden" 

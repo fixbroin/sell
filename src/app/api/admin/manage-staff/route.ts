@@ -38,7 +38,11 @@ export async function POST(request: NextRequest) {
     let userRecord;
     try {
       userRecord = await adminAuth.getUserByEmail(email);
-      // If user exists, we don't change their password unless specifically requested (keeping it simple for now)
+      // User exists -> update their password and display name so the new credentials work immediately
+      await adminAuth.updateUser(userRecord.uid, {
+        password,
+        displayName: name,
+      });
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'auth/user-not-found') {
         userRecord = await adminAuth.createUser({
@@ -77,6 +81,11 @@ export async function POST(request: NextRequest) {
         }, { merge: true });
         
         await statsRef.set({ totalUsers: FieldValue.increment(1) }, { merge: true });
+    } else {
+        await userDocRef.set({
+            displayName: name,
+            isActive: true,
+        }, { merge: true });
     }
 
     // 5. Create record in 'admins' collection

@@ -114,11 +114,8 @@ const nextConfig: NextConfig = {
     unoptimized: false,
     formats: ["image/avif", "image/webp"],
     remotePatterns: [
-      { protocol: 'https', hostname: 'yourbrand.in' },
-      { protocol: 'https', hostname: 'yourbrand.in' },
-      { protocol: 'https', hostname: '*.yourbrand.in' },
-      { protocol: 'https', hostname: '*.yourbrand.in' }, // ADD THIS
-      { protocol: 'https', hostname: 'ad.yourbrand.in' },
+      { protocol: 'https', hostname: 'yourdomain.com' },
+      { protocol: 'https', hostname: '*.yourdomain.com' }, // ADD THIS
       { protocol: 'https', hostname: 'firebasestorage.googleapis.com' },
       { protocol: 'https', hostname: 'maps.googleapis.com' },
       { protocol: 'https', hostname: 'placehold.co' },

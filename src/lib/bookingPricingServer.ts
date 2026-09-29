@@ -141,15 +141,9 @@ export async function calculateServerBookingTotal(
     : (rawPlatformFees && typeof rawPlatformFees === 'object' ? Object.values(rawPlatformFees) : []);
 
   const isPlatformFeeGloballyEnabled = appConfig.enablePlatformFee !== false;
-  const isExclusiveFeePolicy = appConfig.enableExclusiveFeePolicy !== false; // Default true: only one fee applies at a time
 
-  // If exclusive policy is ON, platform fees only apply if baseVisitingCharge === 0.
-  // If exclusive policy is OFF, platform fees apply even if visiting charge is present!
-  const shouldApplyPlatformFees = isPlatformFeeGloballyEnabled &&
-    platformFeesList.length > 0 &&
-    (!isExclusiveFeePolicy || baseVisitingCharge === 0);
-
-  if (shouldApplyPlatformFees) {
+  // Platform fees apply when enabled and visiting charge is not applied (matching client rules across checkout & admin)
+  if (isPlatformFeeGloballyEnabled && baseVisitingCharge === 0 && platformFeesList.length > 0) {
     for (const fee of platformFeesList) {
       if (!fee || fee.isActive === false || fee.isActive === 'false') continue;
 

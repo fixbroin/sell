@@ -123,7 +123,7 @@ export default async function ContactUsPage() {
       "@type": "LocalBusiness",
       "name": "Yourbrand",
       "image": `${appBaseUrl}/android-chrome-512x512.png`,
-      "telephone": "+91-7353113455",
+      "telephone": "+91-9876543210",
       "email": "support@yourdomain.com",
       "address": {
         "@type": "PostalAddress",
@@ -181,7 +181,7 @@ export default async function ContactUsPage() {
                       </div>
                       <div>
                         <p className="text-sm font-bold uppercase tracking-widest opacity-60 mb-1">Call Us</p>
-                        <p className="text-xl font-bold">+91-7353113455</p>
+                        <p className="text-xl font-bold">+91-9876543210</p>
                       </div>
                     </div>
 
