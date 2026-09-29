@@ -53,6 +53,7 @@ export const defaultAppSettings: AppSettings = {
   limitLateBookingHours: 4,
   // Platform Fees
   platformFees: [], // Default to an empty array
+  enableExclusiveFeePolicy: true, // Default to true: only one fee applies at a time (visiting fee OR platform fee)
   // Cancellation Policy
   enableCancellationPolicy: false,
   freeCancellationDays: 1, // e.g., 1 day before

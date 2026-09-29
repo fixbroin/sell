@@ -31,6 +31,7 @@ const processData = (firestoreData: Partial<AppSettings>): AppSettings => {
       }
     },
     platformFees: firestoreData.platformFees || defaultAppSettings.platformFees || [],
+    enableExclusiveFeePolicy: typeof firestoreData.enableExclusiveFeePolicy === 'boolean' ? firestoreData.enableExclusiveFeePolicy : (defaultAppSettings.enableExclusiveFeePolicy ?? true),
     enableCancellationPolicy: typeof firestoreData.enableCancellationPolicy === 'boolean' ? firestoreData.enableCancellationPolicy : defaultAppSettings.enableCancellationPolicy,
     isProviderRegistrationEnabled: typeof firestoreData.isProviderRegistrationEnabled === 'boolean' ? firestoreData.isProviderRegistrationEnabled : defaultAppSettings.isProviderRegistrationEnabled,
     isCancelledChequeCompulsory: typeof firestoreData.isCancelledChequeCompulsory === 'boolean' ? firestoreData.isCancelledChequeCompulsory : defaultAppSettings.isCancelledChequeCompulsory,

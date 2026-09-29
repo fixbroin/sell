@@ -318,7 +318,10 @@ export default function EditBookingModal({ bookingId, isOpen, onOpenChange, onSu
       }
     }
 
-    if (visitingCharge === 0 && appConfig?.platformFees) {
+    const isExclusiveFeePolicy = appConfig?.enableExclusiveFeePolicy !== false;
+    const shouldApplyPlatformFees = (!isExclusiveFeePolicy || visitingCharge === 0) && appConfig?.platformFees;
+
+    if (shouldApplyPlatformFees && appConfig?.platformFees) {
       appConfig.platformFees.forEach(fee => {
         if (fee.isActive) {
           const base = fee.type === 'percentage' ? (itemTotal * (fee.value / 100)) : fee.value;
@@ -329,7 +332,8 @@ export default function EditBookingModal({ bookingId, isOpen, onOpenChange, onSu
             valueApplied: fee.value, 
             calculatedFeeAmount: base, 
             taxRatePercentOnFee: fee.feeTaxRatePercent || 0, 
-            taxAmountOnFee: tax 
+            taxAmountOnFee: tax,
+            amount: base + tax,
           });
           platformFeeTotal += (base + tax);
         }

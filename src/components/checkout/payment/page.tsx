@@ -349,13 +349,15 @@ export default function PaymentPage() {
     setVisitingCharge(calculatedBaseVisitingCharge); setPolicyMessage(currentPolicyMessage);
 
     let runningTotalForPlatformFeeBase = 0; let runningTotalTaxOnPlatformFees = 0; const newCalculatedPlatformFees: AppliedPlatformFeeItem[] = [];
-    if (calculatedBaseVisitingCharge === 0 && appConfig.platformFees && appConfig.platformFees.length > 0) {
+    const isExclusiveFeePolicy = appConfig?.enableExclusiveFeePolicy !== false;
+    const shouldApplyPlatformFees = (!isExclusiveFeePolicy || calculatedBaseVisitingCharge === 0) && appConfig.platformFees && appConfig.platformFees.length > 0;
+    if (shouldApplyPlatformFees && appConfig.platformFees) {
       appConfig.platformFees.forEach(fee => {
         if (fee.isActive) {
           let feeBaseAmount = 0;
           if (fee.type === 'percentage') feeBaseAmount = (currentSumOfDisplayedPrices * fee.value) / 100; else feeBaseAmount = fee.value;
-          const taxOnThisFee = feeBaseAmount * (fee.feeTaxRatePercent / 100);
-          newCalculatedPlatformFees.push({ name: fee.name, type: fee.type, valueApplied: fee.value, calculatedFeeAmount: feeBaseAmount, taxRatePercentOnFee: fee.feeTaxRatePercent, taxAmountOnFee: taxOnThisFee });
+          const taxOnThisFee = feeBaseAmount * ((fee.feeTaxRatePercent || 0) / 100);
+          newCalculatedPlatformFees.push({ name: fee.name, type: fee.type, valueApplied: fee.value, calculatedFeeAmount: feeBaseAmount, taxRatePercentOnFee: fee.feeTaxRatePercent || 0, taxAmountOnFee: taxOnThisFee, amount: feeBaseAmount + taxOnThisFee });
           runningTotalForPlatformFeeBase += feeBaseAmount; runningTotalTaxOnPlatformFees += taxOnThisFee;
         }
       });

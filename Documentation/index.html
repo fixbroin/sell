@@ -1101,8 +1101,8 @@
           </tr>
           <tr>
             <td><strong>Server RAM</strong></td>
-            <td>1 GB (with Standalone Build)</td>
-            <td>2 GB - 4 GB RAM</td>
+            <td>2 GB (with Standalone Build)</td>
+            <td>4 GB - 8 GB RAM</td>
           </tr>
           <tr>
             <td><strong>Web Server</strong></td>
@@ -1336,7 +1336,7 @@ sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com</code></pre>
     <!-- SECTION 11: CRON JOBS SETUP -->
     <section id="cron-jobs">
       <h2>11. Cron Jobs Setup</h2>
-      <p>Automate slot calculation, booking status checks, and reminder notifications by configuring cron jobs:</p>
+      <p>Automate dynamic URL search engine indexing and automated marketing email flows by configuring VPS cron jobs:</p>
       <table>
         <thead>
           <tr>
@@ -1347,19 +1347,46 @@ sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com</code></pre>
         </thead>
         <tbody>
           <tr>
-            <td><code>/api/cron/check-slots</code></td>
-            <td>Every 15 minutes (<code>*/15 * * * *</code>)</td>
-            <td>Recalculates dynamic slot availability</td>
+            <td><code>/api/indexing-cron?secret=YOUR_CRON_SECRET</code></td>
+            <td>Daily at 1:00 AM (<code>0 1 * * *</code>)</td>
+            <td>Submits new &amp; updated service &amp; location pages dynamically to Google Indexing API</td>
           </tr>
           <tr>
-            <td><code>/api/cron/reminders</code></td>
-            <td>Every hour (<code>0 * * * *</code>)</td>
-            <td>Sends upcoming service reminders</td>
+            <td><code>/api/marketing-cron?secret=YOUR_CRON_SECRET</code></td>
+            <td>Every 2 hours (<code>0 */2 * * *</code>)</td>
+            <td>Processes automated marketing email flows, booking reminders, and customer re-engagement</td>
           </tr>
         </tbody>
       </table>
-      <p>Example Crontab Entry on Linux VPS (<code>crontab -e</code>):</p>
-      <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>*/15 * * * * curl -s "https://yourdomain.com/api/cron/check-slots?secret=YOUR_CRON_SECRET" > /dev/null 2>&1</code></pre>
+
+      <h3>Crontab Configuration on Linux VPS</h3>
+      <p>SSH into your VPS terminal and open the crontab editor:</p>
+      <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code>crontab -e</code></pre>
+
+      <p>Paste the following cron entries at the bottom of the file (replace <code>yourdomain.com</code> and <code>yourbrand123</code> with your actual domain name and <code>CRON_SECRET</code>):</p>
+      <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code># 1. Google Indexing Cron (Runs Daily at 1:00 AM)
+0 1 * * * curl -s "https://yourdomain.com/api/indexing-cron?secret=yourbrand123" >/dev/null 2>&1
+
+# 2. Marketing Automation Cron (Runs Every 2 Hours)
+0 */2 * * * curl -s "https://yourdomain.com/api/marketing-cron?secret=yourbrand123" >/dev/null 2>&1</code></pre>
+
+      <h3>Required Google Indexing Setup Steps</h3>
+      <ol>
+        <li><strong>Enable Indexing API in Google Cloud Console:</strong> Go to the Google Cloud Console API Library for your Firebase project, search for <strong>"Indexing API"</strong>, and click <strong>Enable</strong>.</li>
+        <li><strong>Authorize Service Account in Search Console:</strong> Open Google Search Console &rarr; Settings &rarr; Users and permissions &rarr; Add User. Enter your Firebase Service Account email (found in your credentials JSON under <code>client_email</code>) and set permission level to <strong>Owner</strong>.</li>
+      </ol>
+
+      <h3>Manual Verification &amp; Testing</h3>
+      <p>To test either endpoint manually from your VPS terminal, run:</p>
+      <pre><button class="btn-copy" onclick="copyCode(this)">Copy</button><code># Test Google Indexing Cron
+curl 'https://yourdomain.com/api/indexing-cron?secret=yourbrand123'
+
+# Test Marketing Automation Cron
+curl 'https://yourdomain.com/api/marketing-cron?secret=yourbrand123'</code></pre>
+
+      <div class="alert alert-info" style="margin-top: 15px;">
+        <strong>Note:</strong> Google Indexing API enforces a default limit of 200 requests per day (resets daily at 12:30 PM IST / midnight PT). Failed submissions remain as "Pending" in Firestore and retry on the next run. For standalone documentation, see <code>Documentation/CRON_INSTRUCTIONS.md</code>.
+      </div>
     </section>
 
     <!-- SECTION 12: PAYMENTS & SETTINGS -->

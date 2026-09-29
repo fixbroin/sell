@@ -20,6 +20,7 @@ const APP_CONFIG_DOC_ID = "applicationConfig";
 export default function AdminPlatformSettingsPage() {
   const { toast } = useToast();
   const [platformFees, setPlatformFees] = useState<PlatformFeeSetting[]>(defaultAppSettings.platformFees || []);
+  const [enableExclusiveFeePolicy, setEnableExclusiveFeePolicy] = useState<boolean>(defaultAppSettings.enableExclusiveFeePolicy ?? true);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
 
@@ -31,13 +32,20 @@ export default function AdminPlatformSettingsPage() {
       if (docSnap.exists()) {
         const firestoreData = docSnap.data() as Partial<AppSettings>;
         setPlatformFees(firestoreData.platformFees || defaultAppSettings.platformFees || []);
+        setEnableExclusiveFeePolicy(
+          typeof firestoreData.enableExclusiveFeePolicy === 'boolean'
+            ? firestoreData.enableExclusiveFeePolicy
+            : (defaultAppSettings.enableExclusiveFeePolicy ?? true)
+        );
       } else {
         setPlatformFees(defaultAppSettings.platformFees || []);
+        setEnableExclusiveFeePolicy(defaultAppSettings.enableExclusiveFeePolicy ?? true);
       }
     } catch (e) {
       console.error("Failed to load platform fee settings:", e);
       toast({ title: "Error Loading Settings", description: "Could not load platform fee settings.", variant: "destructive" });
       setPlatformFees(defaultAppSettings.platformFees || []);
+      setEnableExclusiveFeePolicy(defaultAppSettings.enableExclusiveFeePolicy ?? true);
     } finally {
       setIsLoadingSettings(false);
     }
@@ -47,19 +55,24 @@ export default function AdminPlatformSettingsPage() {
     loadSettings();
   }, [loadSettings]);
 
-  const handleSavePlatformFees = async (updatedFees: PlatformFeeSetting[]) => {
+  const handleSavePlatformFees = async (updatedFees: PlatformFeeSetting[], updatedExclusivePolicy: boolean) => {
     setIsSaving(true);
     try {
       const settingsDocRef = doc(db, APP_CONFIG_COLLECTION, APP_CONFIG_DOC_ID);
-      // We only update the platformFees part of the AppSettings and merge it.
+      // We update the platformFees and exclusive fee policy of AppSettings and merge it.
       await setDoc(settingsDocRef, 
-        { platformFees: updatedFees, updatedAt: Timestamp.now() }, 
+        { 
+          platformFees: updatedFees, 
+          enableExclusiveFeePolicy: updatedExclusivePolicy,
+          updatedAt: Timestamp.now() 
+        }, 
         { merge: true }
       );
       await triggerRefresh('app-settings');
       await triggerRefresh('global-cache');
       await triggerRefresh('sitemap');
       setPlatformFees(updatedFees); // Update local state to reflect saved data
+      setEnableExclusiveFeePolicy(updatedExclusivePolicy);
       toast({
         title: "Platform Fees Saved",
         description: "Your platform fee configurations have been updated.",
@@ -101,6 +114,7 @@ export default function AdminPlatformSettingsPage() {
       <PermissionGuard moduleId="platform_settings" action="write" fallback={<div className="p-8 text-center text-muted-foreground bg-muted/10 rounded-2xl border border-dashed">You do not have permission to modify platform fees. Contact Super Admin for access.</div>}>
         <PlatformSettingsForm
           initialFees={platformFees}
+          initialExclusivePolicy={enableExclusiveFeePolicy}
           onSave={handleSavePlatformFees}
           isSaving={isSaving}
         />
