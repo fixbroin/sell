@@ -121,7 +121,7 @@ export const defaultSeoValues: FirestoreSEOSettings = {
 
   socialProfileUrls: {
     facebook: 'https://www.facebook.com/yourbrand.in',
-    twitter: 'https://x.com/yourbrand_in',
+    twitter: 'https://x.com/yourbrand.com',
     instagram: 'https://www.instagram.com/yourbrand.in/',
     linkedin: 'https://www.linkedin.com/company/yourbrand-in',
     youtube: 'https://www.youtube.com/@yourbrand-in',

@@ -237,14 +237,14 @@ async function seedDemoDataForTable(conn: mysql.Pool | mysql.PoolConnection, tab
           websiteName: "Yourbrand",
           contactEmail: "support@yourdomain.com",
           contactMobile: "+917353113455",
-          address: "#44 Electronic City Phase 2, Bangalore - 560100",
+          address: "123 Main Street, City, Country - 123456",
           logoUrl: "/android-chrome-512x512.png",
           faviconUrl: "/favicon.ico",
           websiteIconUrl: "/android-chrome-512x512.png",
           socialMediaLinks: {
             facebook: "https://facebook.com/yourbrand.in",
             instagram: "https://instagram.com/yourbrand.in",
-            twitter: "https://x.com/yourbrand_in"
+            twitter: "https://x.com/yourbrand.com"
           },
           themeColors: {
             light: {

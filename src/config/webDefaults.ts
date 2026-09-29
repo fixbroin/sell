@@ -13,7 +13,7 @@ export const defaultGlobalWebSettings: GlobalWebSettings = {
   socialMediaLinks: {
     facebook: "https://www.facebook.com/yourbrand.in",
     instagram: "https://www.instagram.com/yourbrand.in",
-    twitter: "https://x.com/yourbrand_in",
+    twitter: "https://x.com/yourbrand.com",
     linkedin: "https://www.linkedin.com/company/yourbrand-in",
     youtube: "https://www.youtube.com/@yourbrand-in",
   },
