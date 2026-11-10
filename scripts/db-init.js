@@ -119,9 +119,26 @@ async function main() {
     });
 
     console.log('[DB-Init] Checking database tables...');
+    let existingTables = new Set();
+    try {
+      const [rows] = await dbConn.query('SHOW TABLES');
+      if (Array.isArray(rows)) {
+        for (const row of rows) {
+          const val = Object.values(row)[0];
+          if (val) existingTables.add(val.toString().toLowerCase());
+        }
+      }
+    } catch (showErr) {
+      // Ignore if SHOW TABLES query fails
+    }
+
     for (const table of TABLES) {
       const cleanName = table.replace(/[^a-zA-Z0-9_]/g, '');
       if (!cleanName) continue;
+
+      if (existingTables.has(cleanName.toLowerCase())) {
+        continue;
+      }
 
       const createTableQuery = `
         CREATE TABLE IF NOT EXISTS \`${cleanName}\` (
@@ -136,7 +153,26 @@ async function main() {
           KEY \`idx_updated\` (\`updated_at\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `;
-      await dbConn.query(createTableQuery);
+      try {
+        await dbConn.query(createTableQuery);
+      } catch (tableErr) {
+        const msg = tableErr.message || '';
+        const code = tableErr.code || '';
+        const errno = tableErr.errno;
+        // Ignore "table already exists" (1050) or "tablespace exists" (1813)
+        if (
+          code === 'ER_TABLE_EXISTS_ERROR' ||
+          errno === 1050 ||
+          msg.includes('already exists') ||
+          code === 'ER_TABLESPACE_EXISTS' ||
+          errno === 1813 ||
+          msg.includes('tablespace') ||
+          msg.includes('Tablespace')
+        ) {
+          continue;
+        }
+        console.warn(`[DB-Init] Notice for table "${cleanName}":`, msg);
+      }
     }
     console.log('[DB-Init] All database tables checked/created successfully.');
   } catch (err) {

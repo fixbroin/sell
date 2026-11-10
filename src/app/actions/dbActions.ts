@@ -3,7 +3,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { getPool, getDocInternal, getDocsInternal, addDocInternal, setDocInternal, updateDocInternal, deleteDocInternal } from '@/lib/mysql';
+import { getPool, getDocInternal, getDocsInternal, addDocInternal, setDocInternal, updateDocInternal, deleteDocInternal, ensureTableExists, resolvePath } from '@/lib/mysql';
 
 // Fast server-side in-memory cache for high-frequency configuration reads
 const docCache = new Map<string, { data: any; expiresAt: number }>();
@@ -163,6 +163,19 @@ export async function executeDbBatch(operations: any[]) {
   return withRetry(async () => {
     clearDocCache();
     const pool = await getPool();
+
+    // Ensure all target tables exist before starting transaction to avoid DDL implicit commits
+    for (const op of operations) {
+      if (op.collection) {
+        try {
+          const resolved = resolvePath(op.collection);
+          await ensureTableExists(pool, resolved.table);
+        } catch {
+          // Ignore if table cannot be auto-checked
+        }
+      }
+    }
+
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();

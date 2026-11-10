@@ -127,7 +127,7 @@ export default async function RootLayout({
 
   return (
     <html lang="en" className={`${roboto.variable}`} suppressHydrationWarning>
-      <body className="font-body antialiased no-select">
+      <body className="font-body antialiased no-select" suppressHydrationWarning>
         <style 
           id="yourbrand-dynamic-theme-styles" 
           precedence="high"

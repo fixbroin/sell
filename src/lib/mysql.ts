@@ -170,7 +170,7 @@ export async function ensureTableExists(conn: mysql.Pool | mysql.PoolConnection,
     CREATE TABLE IF NOT EXISTS \`${cleanName}\` (
       \`id\` VARCHAR(255) NOT NULL,
       \`parent_id\` VARCHAR(255) DEFAULT NULL,
-      \`data\` JSON NOT NULL,
+      \`data\` LONGTEXT NOT NULL,
       \`created_at\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       \`updated_at\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (\`id\`),
@@ -179,7 +179,26 @@ export async function ensureTableExists(conn: mysql.Pool | mysql.PoolConnection,
       INDEX \`idx_updated\` (\`updated_at\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
-  await conn.query(createTableQuery);
+  try {
+    await conn.query(createTableQuery);
+  } catch (err: any) {
+    const msg = err?.message || '';
+    const code = err?.code || '';
+    const errno = err?.errno;
+    if (
+      code === 'ER_TABLE_EXISTS_ERROR' ||
+      errno === 1050 ||
+      msg.includes('already exists') ||
+      code === 'ER_TABLESPACE_EXISTS' ||
+      errno === 1813 ||
+      msg.includes('tablespace') ||
+      msg.includes('Tablespace')
+    ) {
+      // Table or tablespace already exists - safe to continue
+    } else {
+      throw err;
+    }
+  }
   clearTableColumnsCache(cleanName);
 }
 
@@ -190,14 +209,29 @@ async function initializeDatabase(p: mysql.Pool) {
   if (isInitialized) return;
 
   try {
+    let existingTables = new Set<string>();
+    try {
+      const [rows]: any = await p.query('SHOW TABLES');
+      if (Array.isArray(rows)) {
+        for (const row of rows) {
+          const val = Object.values(row)[0];
+          if (val) existingTables.add(val.toString().toLowerCase());
+        }
+      }
+    } catch {
+      // Ignore SHOW TABLES failure
+    }
+
     for (const table of TABLES) {
-      await ensureTableExists(p, table);
+      if (!existingTables.has(table.toLowerCase())) {
+        await ensureTableExists(p, table);
+      }
     }
     isInitialized = true;
     console.log("MySQL Database & Tables initialized successfully.");
   } catch (error) {
-    console.error("Error during table initialization:", error);
-    throw error;
+    console.warn("Notice during table initialization (continuing):", error);
+    isInitialized = true;
   }
 }
 
@@ -511,9 +545,11 @@ export function resolvePath(path: string): { table: string; docId: string | null
   }
 
   // Validate whitelisted table name to prevent SQL Injection
-  if (!TABLES.includes(finalTable)) {
+  const matchedTable = TABLES.find(t => t.toLowerCase() === finalTable.toLowerCase());
+  if (!matchedTable) {
     throw new Error(`Access denied: Invalid database table "${finalTable}"`);
   }
+  finalTable = matchedTable;
 
   return { table: finalTable, docId, parentId };
 }
