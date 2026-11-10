@@ -132,6 +132,34 @@ export async function getPool(): Promise<mysql.Pool> {
 }
 
 /**
+ * Table column cache for lightning-fast schema reflection
+ */
+const tableColumnsCache = new Map<string, Set<string>>();
+
+export async function getTableColumns(conn: mysql.Pool | mysql.PoolConnection, tableName: string): Promise<Set<string>> {
+  const key = tableName.toLowerCase();
+  const cached = tableColumnsCache.get(key);
+  if (cached) return cached;
+
+  try {
+    const [cols]: any = await conn.query(`SHOW COLUMNS FROM \`${tableName}\``);
+    const set = new Set<string>((cols || []).map((c: any) => c.Field));
+    tableColumnsCache.set(key, set);
+    return set;
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export function clearTableColumnsCache(tableName?: string) {
+  if (tableName) {
+    tableColumnsCache.delete(tableName.toLowerCase());
+  } else {
+    tableColumnsCache.clear();
+  }
+}
+
+/**
  * Creates a specific table on the fly if it does not exist.
  */
 export async function ensureTableExists(conn: mysql.Pool | mysql.PoolConnection, tableName: string) {
@@ -143,14 +171,16 @@ export async function ensureTableExists(conn: mysql.Pool | mysql.PoolConnection,
       \`id\` VARCHAR(255) NOT NULL,
       \`parent_id\` VARCHAR(255) DEFAULT NULL,
       \`data\` JSON NOT NULL,
-      \`createdAt\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      \`updatedAt\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`created_at\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (\`id\`),
-      INDEX \`idx_created_at\` (\`createdAt\`),
-      INDEX \`idx_parent_id\` (\`parent_id\`)
+      INDEX \`idx_parent\` (\`parent_id\`),
+      INDEX \`idx_created\` (\`created_at\`),
+      INDEX \`idx_updated\` (\`updated_at\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
   await conn.query(createTableQuery);
+  clearTableColumnsCache(cleanName);
 }
 
 /**
@@ -531,6 +561,7 @@ function jsonExtractRaw(field: string): string {
 
 export async function getDocsInternal(conn: mysql.PoolConnection | mysql.Pool, path: string, constraints: any[] = []) {
   const resolved = resolvePath(path);
+  const colSet = await getTableColumns(conn, resolved.table);
   let sql = `SELECT \`id\`, \`data\` FROM \`${resolved.table}\``;
   const whereClauses: string[] = [];
   const params: any[] = [];
@@ -570,9 +601,14 @@ export async function getDocsInternal(conn: mysql.PoolConnection | mysql.Pool, p
         }
         return;
       }
-      // Handle date filters (createdAt/updatedAt) on actual table columns
-      if (field === 'createdAt' || field === 'updatedAt') {
-        const sqlField = `\`${field}\``;
+      // Handle date filters (createdAt/updatedAt) on actual table columns (supports both createdAt and created_at)
+      if (field === 'createdAt' || field === 'created_at' || field === 'updatedAt' || field === 'updated_at') {
+        const isCreated = (field === 'createdAt' || field === 'created_at');
+        const colName = isCreated
+          ? (colSet.has('createdAt') ? 'createdAt' : (colSet.has('created_at') ? 'created_at' : null))
+          : (colSet.has('updatedAt') ? 'updatedAt' : (colSet.has('updated_at') ? 'updated_at' : null));
+        
+        const sqlField = colName ? `\`${colName}\`` : jsonExtractText(isCreated ? 'createdAt' : 'updatedAt');
         const dateValue = extractDate(c.value);
         
         if (op === '==') {
@@ -680,8 +716,22 @@ export async function getDocsInternal(conn: mysql.PoolConnection | mysql.Pool, p
         throw new Error(`Access denied: Invalid sorting direction "${direction}"`);
       }
 
-      if (field === 'createdAt' || field === 'updatedAt') {
-        orderByClauses.push(`\`${field}\` ${direction.toUpperCase()}`);
+      if (field === 'createdAt' || field === 'created_at') {
+        const colName = colSet.has('createdAt') ? 'createdAt' : (colSet.has('created_at') ? 'created_at' : null);
+        if (colName) {
+          orderByClauses.push(`\`${colName}\` ${direction.toUpperCase()}`);
+        } else {
+          orderByClauses.push(`${jsonExtractText('createdAt')} ${direction.toUpperCase()}`);
+        }
+      } else if (field === 'updatedAt' || field === 'updated_at') {
+        const colName = colSet.has('updatedAt') ? 'updatedAt' : (colSet.has('updated_at') ? 'updated_at' : null);
+        if (colName) {
+          orderByClauses.push(`\`${colName}\` ${direction.toUpperCase()}`);
+        } else {
+          orderByClauses.push(`${jsonExtractText('updatedAt')} ${direction.toUpperCase()}`);
+        }
+      } else if (field === 'id' && colSet.has('id')) {
+        orderByClauses.push(`\`id\` ${direction.toUpperCase()}`);
       } else if (['order', 'price', 'rating', 'reviewCount', 'discountedPrice', 'minQuantity', 'maxQuantity'].includes(field)) {
         orderByClauses.push(`CAST(${jsonExtractText(field)} AS SIGNED) ${direction.toUpperCase()}`);
       } else {
@@ -778,6 +828,39 @@ export async function getDocsInternal(conn: mysql.PoolConnection | mysql.Pool, p
       await ensureTableExists(conn, resolved.table);
       return [];
     }
+    // Safe retry on unexpected unknown column error
+    if (err.code === 'ER_BAD_FIELD_ERROR' || err.errno === 1054 || (err.message && err.message.includes('Unknown column'))) {
+      clearTableColumnsCache(resolved.table);
+      console.warn(`[MySQL] Unknown column detected in query for "${resolved.table}". Retrying with safe JSON extract fallback:`, err.message);
+      try {
+        let fallbackSql = sql
+          .replace(/\`createdAt\`/g, jsonExtractText('createdAt'))
+          .replace(/\`updatedAt\`/g, jsonExtractText('updatedAt'))
+          .replace(/\`created_at\`/g, jsonExtractText('createdAt'))
+          .replace(/\`updated_at\`/g, jsonExtractText('updatedAt'));
+        const [fallbackResult]: any = await conn.query(fallbackSql, params);
+        rows = fallbackResult;
+      } catch (retryErr: any) {
+        if (err.message && err.message.includes('order clause')) {
+          try {
+            const noOrderSql = sql.replace(/ORDER BY\s+[^LIMIT]+(?=\s+LIMIT|\s*$)/i, '');
+            const [noOrderResult]: any = await conn.query(noOrderSql, params);
+            rows = noOrderResult;
+          } catch {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+      return (rows || []).map((row: any) => {
+        const rawData = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+        return {
+          id: row.id,
+          data: deserializeDbData(rawData)
+        };
+      });
+    }
     throw err;
   }
 
@@ -860,30 +943,50 @@ function extractDate(val: any): Date | null {
 export async function addDocInternal(conn: mysql.PoolConnection | mysql.Pool, path: string, data: any) {
   const resolved = resolvePath(path);
   await ensureTableExists(conn, resolved.table);
+  const colSet = await getTableColumns(conn, resolved.table);
+
   // Generate random id if not in data, or use existing
   const docId = data.id || data.uid || require('nanoid').nanoid(20);
   const resolvedData = resolveFieldValues(null, data);
   const cleanData = { ...serializeDbData(resolvedData), id: docId };
 
-  const createdAtDate = extractDate(cleanData.createdAt);
-  const updatedAtDate = extractDate(cleanData.updatedAt);
+  const createdAtDate = extractDate(cleanData.createdAt) || new Date();
+  const updatedAtDate = extractDate(cleanData.updatedAt) || new Date();
 
-  if (createdAtDate && updatedAtDate) {
-    await conn.query(
-      `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`, \`createdAt\`, \`updatedAt\`) VALUES (?, ?, ?, ?, ?)`,
-      [docId, resolved.parentId, JSON.stringify(cleanData), createdAtDate, updatedAtDate]
-    );
-  } else if (createdAtDate) {
-    await conn.query(
-      `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`, \`createdAt\`) VALUES (?, ?, ?, ?)`,
-      [docId, resolved.parentId, JSON.stringify(cleanData), createdAtDate]
-    );
-  } else {
-    await conn.query(
-      `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`) VALUES (?, ?, ?)`,
-      [docId, resolved.parentId, JSON.stringify(cleanData)]
-    );
+  const cols: string[] = ['`id`', '`parent_id`', '`data`'];
+  const placeholders: string[] = ['?', '?', '?'];
+  const insertParams: any[] = [docId, resolved.parentId, JSON.stringify(cleanData)];
+
+  if (createdAtDate) {
+    if (colSet.has('createdAt')) {
+      cols.push('`createdAt`');
+      placeholders.push('?');
+      insertParams.push(createdAtDate);
+    }
+    if (colSet.has('created_at')) {
+      cols.push('`created_at`');
+      placeholders.push('?');
+      insertParams.push(createdAtDate);
+    }
   }
+
+  if (updatedAtDate) {
+    if (colSet.has('updatedAt')) {
+      cols.push('`updatedAt`');
+      placeholders.push('?');
+      insertParams.push(updatedAtDate);
+    }
+    if (colSet.has('updated_at')) {
+      cols.push('`updated_at`');
+      placeholders.push('?');
+      insertParams.push(updatedAtDate);
+    }
+  }
+
+  await conn.query(
+    `INSERT INTO \`${resolved.table}\` (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`,
+    insertParams
+  );
 
   return { id: docId };
 }
@@ -891,59 +994,66 @@ export async function addDocInternal(conn: mysql.PoolConnection | mysql.Pool, pa
 export async function setDocInternal(conn: mysql.PoolConnection | mysql.Pool, path: string, docIdInput: string, data: any, options: any = {}) {
   const resolved = resolvePath(`${path}/${docIdInput}`);
   await ensureTableExists(conn, resolved.table);
+  const colSet = await getTableColumns(conn, resolved.table);
   const resolvedData = resolveFieldValues(null, data);
   const cleanData = serializeDbData(resolvedData);
 
+  let finalData: any;
   if (options.merge) {
-    // Merge with existing
     const existing = await getDocInternal(conn, path, docIdInput);
     if (existing.exists) {
-      const merged = resolveFieldValues(serializeDbData(existing.data), cleanData);
-      merged.id = resolved.docId;
-      
-      const createdAtDate = extractDate(merged.createdAt);
-      const updatedAtDate = extractDate(merged.updatedAt);
+      finalData = resolveFieldValues(serializeDbData(existing.data), cleanData);
+    } else {
+      finalData = cleanData;
+    }
+  } else {
+    finalData = cleanData;
+  }
 
-      if (createdAtDate && updatedAtDate) {
-        await conn.query(
-          `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`, \`createdAt\`, \`updatedAt\`) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`), \`createdAt\` = VALUES(\`createdAt\`), \`updatedAt\` = VALUES(\`updatedAt\`)`,
-          [resolved.docId, resolved.parentId, JSON.stringify(merged), createdAtDate, updatedAtDate]
-        );
-      } else if (createdAtDate) {
-        await conn.query(
-          `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`, \`createdAt\`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`), \`createdAt\` = VALUES(\`createdAt\`)`,
-          [resolved.docId, resolved.parentId, JSON.stringify(merged), createdAtDate]
-        );
-      } else {
-        await conn.query(
-          `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`)`,
-          [resolved.docId, resolved.parentId, JSON.stringify(merged)]
-        );
-      }
-      return;
+  finalData = { ...finalData, id: resolved.docId };
+
+  const createdAtDate = extractDate(finalData.createdAt);
+  const updatedAtDate = extractDate(finalData.updatedAt) || new Date();
+
+  const cols: string[] = ['`id`', '`parent_id`', '`data`'];
+  const placeholders: string[] = ['?', '?', '?'];
+  const insertParams: any[] = [resolved.docId, resolved.parentId, JSON.stringify(finalData)];
+  const updateClauses: string[] = ['`data` = VALUES(`data`)'];
+
+  if (createdAtDate) {
+    if (colSet.has('createdAt')) {
+      cols.push('`createdAt`');
+      placeholders.push('?');
+      insertParams.push(createdAtDate);
+      updateClauses.push('`createdAt` = VALUES(`createdAt`)');
+    }
+    if (colSet.has('created_at')) {
+      cols.push('`created_at`');
+      placeholders.push('?');
+      insertParams.push(createdAtDate);
+      updateClauses.push('`created_at` = VALUES(`created_at`)');
     }
   }
 
-  const finalData = { ...cleanData, id: resolved.docId };
-  const createdAtDate = extractDate(finalData.createdAt);
-  const updatedAtDate = extractDate(finalData.updatedAt);
-
-  if (createdAtDate && updatedAtDate) {
-    await conn.query(
-      `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`, \`createdAt\`, \`updatedAt\`) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`), \`createdAt\` = VALUES(\`createdAt\`), \`updatedAt\` = VALUES(\`updatedAt\`)`,
-      [resolved.docId, resolved.parentId, JSON.stringify(finalData), createdAtDate, updatedAtDate]
-    );
-  } else if (createdAtDate) {
-    await conn.query(
-      `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`, \`createdAt\`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`), \`createdAt\` = VALUES(\`createdAt\`)`,
-      [resolved.docId, resolved.parentId, JSON.stringify(finalData), createdAtDate]
-    );
-  } else {
-    await conn.query(
-      `INSERT INTO \`${resolved.table}\` (\`id\`, \`parent_id\`, \`data\`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`)`,
-      [resolved.docId, resolved.parentId, JSON.stringify(finalData)]
-    );
+  if (updatedAtDate) {
+    if (colSet.has('updatedAt')) {
+      cols.push('`updatedAt`');
+      placeholders.push('?');
+      insertParams.push(updatedAtDate);
+      updateClauses.push('`updatedAt` = VALUES(`updatedAt`)');
+    }
+    if (colSet.has('updated_at')) {
+      cols.push('`updated_at`');
+      placeholders.push('?');
+      insertParams.push(updatedAtDate);
+      updateClauses.push('`updated_at` = VALUES(`updated_at`)');
+    }
   }
+
+  await conn.query(
+    `INSERT INTO \`${resolved.table}\` (${cols.join(', ')}) VALUES (${placeholders.join(', ')}) ON DUPLICATE KEY UPDATE ${updateClauses.join(', ')}`,
+    insertParams
+  );
 }
 
 export async function updateDocInternal(conn: mysql.PoolConnection | mysql.Pool, path: string, docIdInput: string, data: any) {
@@ -978,25 +1088,41 @@ export async function updateDocInternal(conn: mysql.PoolConnection | mysql.Pool,
     }
   }
 
+  const colSet = await getTableColumns(conn, resolved.table);
   const createdAtDate = extractDate(merged.createdAt);
-  const updatedAtDate = extractDate(merged.updatedAt);
+  const updatedAtDate = extractDate(merged.updatedAt) || new Date();
 
-  if (createdAtDate && updatedAtDate) {
-    await conn.query(
-      `UPDATE \`${resolved.table}\` SET \`data\` = ?, \`createdAt\` = ?, \`updatedAt\` = ? WHERE \`id\` = ?`,
-      [JSON.stringify(merged), createdAtDate, updatedAtDate, resolved.docId]
-    );
-  } else if (createdAtDate) {
-    await conn.query(
-      `UPDATE \`${resolved.table}\` SET \`data\` = ?, \`createdAt\` = ? WHERE \`id\` = ?`,
-      [JSON.stringify(merged), createdAtDate, resolved.docId]
-    );
-  } else {
-    await conn.query(
-      `UPDATE \`${resolved.table}\` SET \`data\` = ? WHERE \`id\` = ?`,
-      [JSON.stringify(merged), resolved.docId]
-    );
+  const updateClauses: string[] = ['`data` = ?'];
+  const updateParams: any[] = [JSON.stringify(merged)];
+
+  if (createdAtDate) {
+    if (colSet.has('createdAt')) {
+      updateClauses.push('`createdAt` = ?');
+      updateParams.push(createdAtDate);
+    }
+    if (colSet.has('created_at')) {
+      updateClauses.push('`created_at` = ?');
+      updateParams.push(createdAtDate);
+    }
   }
+
+  if (updatedAtDate) {
+    if (colSet.has('updatedAt')) {
+      updateClauses.push('`updatedAt` = ?');
+      updateParams.push(updatedAtDate);
+    }
+    if (colSet.has('updated_at')) {
+      updateClauses.push('`updated_at` = ?');
+      updateParams.push(updatedAtDate);
+    }
+  }
+
+  updateParams.push(resolved.docId);
+
+  await conn.query(
+    `UPDATE \`${resolved.table}\` SET ${updateClauses.join(', ')} WHERE \`id\` = ?`,
+    updateParams
+  );
 }
 
 export async function deleteDocInternal(conn: mysql.PoolConnection | mysql.Pool, path: string, docIdInput?: string) {

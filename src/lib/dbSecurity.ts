@@ -37,10 +37,20 @@ export async function verifyRequest(req: NextRequest | Request): Promise<Request
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
     const uid = decodedToken.uid;
-    const email = decodedToken.email;
+    let email = decodedToken.email;
 
-    // Security Rule: Administrative roles MUST NEVER be read from the regular `users` collection!
-    // Admin privileges are strictly derived from the dedicated `admins` collection.
+    // Fallback: If token doesn't have email claim (e.g. phone sign-in or certain OAuth scopes),
+    // fetch user record from Firebase Auth
+    if (!email && uid) {
+      try {
+        const userRecord = await adminAuth.getUser(uid);
+        email = userRecord.email;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const ADMIN_EMAIL = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').toLowerCase().trim();
     let role: string = 'customer';
 
     try {
@@ -50,6 +60,9 @@ export async function verifyRequest(req: NextRequest | Request): Promise<Request
         if (adminData?.status === 'active' && adminData?.role) {
           role = adminData.role;
         }
+      } else if (email && ADMIN_EMAIL && email.toLowerCase().trim() === ADMIN_EMAIL) {
+        // Automatically grant super_admin role if email matches the configured admin email from .env
+        role = 'super_admin';
       } else {
         // Check if user has an approved provider application
         const providerDoc = await adminDb.collection('providerApplications').doc(uid).get();
@@ -59,6 +72,9 @@ export async function verifyRequest(req: NextRequest | Request): Promise<Request
       }
     } catch (dbErr) {
       console.error("Error reading role verification from adminDb:", dbErr);
+      if (email && ADMIN_EMAIL && email.toLowerCase().trim() === ADMIN_EMAIL) {
+        role = 'super_admin';
+      }
     }
 
     const tempUser: RequestUser = { uid, email, role, isInternal: false };
@@ -77,7 +93,7 @@ export function isUserAdmin(user: RequestUser): boolean {
   if (user.isInternal) return true;
   if (!user.uid || user.uid === 'guest') return false;
 
-  const ADMIN_EMAIL = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || '').toLowerCase().trim();
+  const ADMIN_EMAIL = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').toLowerCase().trim();
   const userEmail = (user.email || '').toLowerCase().trim();
 
   const adminRoles = ['super_admin', 'superadmin', 'finance_admin', 'admin', 'staff'];
@@ -217,10 +233,17 @@ export function validateAccess(user: RequestUser, path: string, action: 'read' |
     return isOwner; // Fields sanitized in mutate endpoint
   }
 
-  // 3b. Admins table (Users can only read their own admin doc; client write is strictly blocked)
+  // 3b. Admins table (Super Admin bootstrap or admin update; users can read their own)
   if (table === 'admins') {
-    if (action === 'write') return false;
-    return isOwner;
+    if (action === 'write') {
+      const ADMIN_EMAIL = (process.env.NEXT_PUBLIC_ADMIN_EMAIL || process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+      const userEmail = (user.email || '').toLowerCase().trim();
+      if (isOwner && ADMIN_EMAIL && userEmail && userEmail === ADMIN_EMAIL) {
+        return true;
+      }
+      return isUserAdmin(user);
+    }
+    return isOwner || isUserAdmin(user);
   }
 
   // 4. Provider Applications (Public read for directory/assignment; authenticated applicants can create/update their own)
